@@ -19,19 +19,35 @@ from typing import Iterable
 import pandas as pd
 import tushare as ts
 
-# 修复权限问题：Monkey patch tushare.set_token，强制使用 /tmp/tk.csv
+# 修复权限问题：Monkey patch tushare，强制使用 /tmp/tk.csv
 # tushare 原始代码会写入 ~/tk.csv，在云环境中可能没有权限
+
+# Patch 1: set_token - 写入 /tmp/tk.csv
 _original_set_token = ts.set_token
 def _patched_set_token(token):
     """修复后的 set_token 函数，使用 /tmp 目录"""
     import pandas as pd
-    # 使用 /tmp/tk.csv 而不是 ~/tk.csv
     fp = '/tmp/tk.csv'
     df = pd.DataFrame({'token': [token]})
     df.to_csv(fp, index=False)
-    # 正确设置 tushare 的 token 属性（使用 name mangling 后的属性名）
     ts._Tushare__token = token
 ts.set_token = _patched_set_token
+
+# Patch 2: pro_api - 从 /tmp/tk.csv 读取 token
+_original_pro_api = ts.pro_api
+def _patched_pro_api():
+    """修复后的 pro_api 函数，从 /tmp 读取 token"""
+    import pandas as pd
+    import os
+    fp = '/tmp/tk.csv'
+    if os.path.exists(fp):
+        df = pd.read_csv(fp)
+        token = df['token'][0]
+        return ts.pro_api(token=token)
+    else:
+        # 回退到原始行为（会抛出异常）
+        return _original_pro_api()
+ts.pro_api = _patched_pro_api
 
 from Common.CEnum import AUTYPE, DATA_FIELD, KL_TYPE
 from Common.CTime import CTime
@@ -44,13 +60,13 @@ from .CommonStockAPI import CCommonStockApi
 def _ensure_token():
     """确保 Tushare Token 已设置"""
     token = os.environ.get("TUSHARE_TOKEN")
-    if token:
-        ts.set_token(token)
-    elif not ts.pro_api()._Tushare__token:
+    if not token:
         raise ValueError(
-            "请设置 TUSHARE_TOKEN 环境变量，或调用 ts.set_token('your_token') 设置 token。\n"
+            "请设置 TUSHARE_TOKEN 环境变量。\n"
             "获取 token: https://tushare.pro/user/token"
         )
+    # 调用我们 patch 过的 set_token，会写入 /tmp/tk.csv
+    ts.set_token(token)
 
 
 def _create_item_dict(row: pd.Series, autype: AUTYPE) -> dict:
