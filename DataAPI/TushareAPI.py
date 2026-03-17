@@ -29,7 +29,8 @@ def _patched_set_token(token):
     fp = '/tmp/tk.csv'
     df = pd.DataFrame({'token': [token]})
     df.to_csv(fp, index=False)
-    ts.__token = token
+    # 正确设置 tushare 的 token 属性（使用 name mangling 后的属性名）
+    ts._Tushare__token = token
 ts.set_token = _patched_set_token
 
 from Common.CEnum import AUTYPE, DATA_FIELD, KL_TYPE
