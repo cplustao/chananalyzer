@@ -19,6 +19,19 @@ from typing import Iterable
 import pandas as pd
 import tushare as ts
 
+# 修复权限问题：Monkey patch tushare.set_token，强制使用 /tmp/tk.csv
+# tushare 原始代码会写入 ~/tk.csv，在云环境中可能没有权限
+_original_set_token = ts.set_token
+def _patched_set_token(token):
+    """修复后的 set_token 函数，使用 /tmp 目录"""
+    import pandas as pd
+    # 使用 /tmp/tk.csv 而不是 ~/tk.csv
+    fp = '/tmp/tk.csv'
+    df = pd.DataFrame({'token': [token]})
+    df.to_csv(fp, index=False)
+    ts.__token = token
+ts.set_token = _patched_set_token
+
 from Common.CEnum import AUTYPE, DATA_FIELD, KL_TYPE
 from Common.CTime import CTime
 from Common.func_util import str2float

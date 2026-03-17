@@ -7,6 +7,9 @@ ChanAnalyzer Web 服务启动脚本
 """
 import os
 import sys
+
+# 修复 tushare 权限问题：强制使用 /tmp 目录存储 token
+os.environ['TUSHARE_PATH'] = '/tmp'
 import subprocess
 import webbrowser
 import argparse

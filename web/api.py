@@ -11,6 +11,10 @@ ChanAnalyzer FastAPI 后端服务 - 真实数据版
 """
 import os
 import sys
+
+# 修复 tushare 权限问题：强制使用 /tmp 目录存储 token
+# 必须在任何 tushare 导入之前设置
+os.environ['TUSHARE_PATH'] = '/tmp'
 import json
 import asyncio
 import importlib
@@ -493,10 +497,14 @@ def _run_scan_in_process(stock_codes: List[str], buy_types: List[str],
     Returns:
         扫描结果字典
     """
+    import os
     import sys
     from pathlib import Path
     import json
     from datetime import datetime
+
+    # 修复 tushare 权限问题：子进程中必须重新设置
+    os.environ['TUSHARE_PATH'] = '/tmp'
 
     # 添加项目路径
     user_data_path = Path(user_data_dir)
