@@ -480,7 +480,11 @@ def save_scan_status_for_type(scan_type: str):
 
 def _run_scan_in_process(stock_codes: List[str], buy_types: List[str],
                          sell_types: List[str], scan_type: str,
-                         user_id: str, user_data_dir: str) -> Dict:
+                         user_id: str, user_data_dir: str,
+                         industries: List[str] = None,
+                         areas: List[str] = None,
+                         exclude_st: bool = True,
+                         exclude_suspend: bool = True) -> Dict:
     """
     在独立进程中执行的扫描函数
 
@@ -493,6 +497,10 @@ def _run_scan_in_process(stock_codes: List[str], buy_types: List[str],
         scan_type: 'buy' 或 'sell'
         user_id: 用户ID
         user_data_dir: 用户数据目录路径
+        industries: 行业筛选列表
+        areas: 地区筛选列表
+        exclude_st: 是否排除ST股票
+        exclude_suspend: 是否排除停牌股票
 
     Returns:
         扫描结果字典
@@ -546,7 +554,11 @@ def _run_scan_in_process(stock_codes: List[str], buy_types: List[str],
             buy_types=buy_types,
             sell_types=sell_types,
             verbose=False,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            industries=industries,
+            areas=areas,
+            exclude_st=exclude_st,
+            exclude_suspend=exclude_suspend,
         )
 
         # 获取股票信息
@@ -586,11 +598,30 @@ def _run_scan_in_process(stock_codes: List[str], buy_types: List[str],
 
 # ============ 多用户后台扫描任务 ============
 
-async def multi_user_buy_scan_task(user_id: str, types: List[str], limit: int):
+async def multi_user_buy_scan_task(
+    user_id: str,
+    types: List[str],
+    limit: int,
+    stock_codes: List[str] = None,
+    industries: List[str] = None,
+    areas: List[str] = None,
+    exclude_st: bool = True,
+    exclude_suspend: bool = True,
+):
     """
     多用户买点扫描任务
 
     使用进程池在独立进程中执行扫描，绕过GIL限制
+
+    Args:
+        user_id: 用户ID
+        types: 买点类型列表
+        limit: 扫描数量限制
+        stock_codes: 指定股票代码列表（可选）
+        industries: 行业筛选（可选）
+        areas: 地区筛选（可选）
+        exclude_st: 是否排除ST股票
+        exclude_suspend: 是否排除停牌股票
     """
     loop = asyncio.get_event_loop()
     pool = get_scan_process_pool()
@@ -605,22 +636,20 @@ async def multi_user_buy_scan_task(user_id: str, types: List[str], limit: int):
 
         # 获取股票列表
         try:
-            all_stock_codes = scan_stocks_cache.get_stock_list_from_db()
-            stock_codes = all_stock_codes if limit <= 0 else all_stock_codes[:limit]
+            # 如果指定了股票代码列表，直接使用
+            if stock_codes:
+                codes_to_scan = stock_codes
+            else:
+                all_stock_codes = scan_stocks_cache.get_stock_list_from_db()
+                codes_to_scan = all_stock_codes if limit <= 0 else all_stock_codes[:limit]
         except FileNotFoundError as e:
             update_user_scan_status(user_id, 'buy',
                 scanning=False, error=f"数据库文件不存在: {str(e)}",
                 message="数据库文件不存在，请先创建数据库"
             )
             return
-        except Exception as e:
-            update_user_scan_status(user_id, 'buy',
-                scanning=False, error=f"获取股票列表异常: {str(e)}",
-                message="获取股票列表时发生错误"
-            )
-            return
 
-        if not stock_codes:
+        if not codes_to_scan:
             update_user_scan_status(user_id, 'buy',
                 scanning=False, error="股票列表为空",
                 message="未找到可扫描的股票"
@@ -628,16 +657,17 @@ async def multi_user_buy_scan_task(user_id: str, types: List[str], limit: int):
             return
 
         update_user_scan_status(user_id, 'buy',
-            total=len(stock_codes),
-            message=f"开始扫描 {len(stock_codes)} 只股票..."
+            total=len(codes_to_scan),
+            message=f"开始扫描 {len(codes_to_scan)} 只股票..."
         )
 
         # 在进程池中执行扫描
         result = await loop.run_in_executor(
             pool,
             _run_scan_in_process,
-            stock_codes, types, [], 'buy', user_id,
-            str(Path(__file__).parent / 'users')
+            codes_to_scan, types, [], 'buy', user_id,
+            str(Path(__file__).parent / 'users'),
+            industries, areas, exclude_st, exclude_suspend
         )
 
         # 处理结果
@@ -670,9 +700,28 @@ async def multi_user_buy_scan_task(user_id: str, types: List[str], limit: int):
         )
 
 
-async def multi_user_sell_scan_task(user_id: str, types: List[str], limit: int):
+async def multi_user_sell_scan_task(
+    user_id: str,
+    types: List[str],
+    limit: int,
+    stock_codes: List[str] = None,
+    industries: List[str] = None,
+    areas: List[str] = None,
+    exclude_st: bool = True,
+    exclude_suspend: bool = True,
+):
     """
     多用户卖点扫描任务
+
+    Args:
+        user_id: 用户ID
+        types: 卖点类型列表
+        limit: 扫描数量限制
+        stock_codes: 指定股票代码列表（可选）
+        industries: 行业筛选（可选）
+        areas: 地区筛选（可选）
+        exclude_st: 是否排除ST股票
+        exclude_suspend: 是否排除停牌股票
     """
     loop = asyncio.get_event_loop()
     pool = get_scan_process_pool()
@@ -687,22 +736,20 @@ async def multi_user_sell_scan_task(user_id: str, types: List[str], limit: int):
 
         # 获取股票列表
         try:
-            all_stock_codes = scan_stocks_cache.get_stock_list_from_db()
-            stock_codes = all_stock_codes if limit <= 0 else all_stock_codes[:limit]
+            # 如果指定了股票代码列表，直接使用
+            if stock_codes:
+                codes_to_scan = stock_codes
+            else:
+                all_stock_codes = scan_stocks_cache.get_stock_list_from_db()
+                codes_to_scan = all_stock_codes if limit <= 0 else all_stock_codes[:limit]
         except FileNotFoundError as e:
             update_user_scan_status(user_id, 'sell',
                 scanning=False, error=f"数据库文件不存在: {str(e)}",
                 message="数据库文件不存在，请先创建数据库"
             )
             return
-        except Exception as e:
-            update_user_scan_status(user_id, 'sell',
-                scanning=False, error=f"获取股票列表异常: {str(e)}",
-                message="获取股票列表时发生错误"
-            )
-            return
 
-        if not stock_codes:
+        if not codes_to_scan:
             update_user_scan_status(user_id, 'sell',
                 scanning=False, error="股票列表为空",
                 message="未找到可扫描的股票"
@@ -710,16 +757,17 @@ async def multi_user_sell_scan_task(user_id: str, types: List[str], limit: int):
             return
 
         update_user_scan_status(user_id, 'sell',
-            total=len(stock_codes),
-            message=f"开始扫描 {len(stock_codes)} 只股票..."
+            total=len(codes_to_scan),
+            message=f"开始扫描 {len(codes_to_scan)} 只股票..."
         )
 
         # 在进程池中执行扫描
         result = await loop.run_in_executor(
             pool,
             _run_scan_in_process,
-            stock_codes, [], types, 'sell', user_id,
-            str(Path(__file__).parent / 'users')
+            codes_to_scan, [], types, 'sell', user_id,
+            str(Path(__file__).parent / 'users'),
+            industries, areas, exclude_st, exclude_suspend
         )
 
         # 处理结果
@@ -1021,12 +1069,24 @@ class BuyScanRequest(BaseModel):
     """买点扫描请求"""
     types: List[str] = ["1", "2", "3a", "3b"]  # 买点类型
     limit: int = 100
+    # 新增筛选参数
+    stock_codes: Optional[List[str]] = None   # 指定股票代码列表（个股模式）
+    industries: Optional[List[str]] = None    # 行业筛选，如 ["电子", "计算机"]
+    areas: Optional[List[str]] = None         # 地区筛选，如 ["深圳", "上海"]
+    exclude_st: bool = True                   # 是否排除ST股票
+    exclude_suspend: bool = True              # 是否排除停牌股票
 
 
 class SellScanRequest(BaseModel):
     """卖点扫描请求"""
-    types: List[str] = ["1", "2s", "3a", "3b"]  # 卖点类型
+    types: List[str] = ["2s"]  # 卖点类型
     limit: int = 100
+    # 新增筛选参数
+    stock_codes: Optional[List[str]] = None   # 指定股票代码列表
+    industries: Optional[List[str]] = None    # 行业筛选
+    areas: Optional[List[str]] = None         # 地区筛选
+    exclude_st: bool = True                   # 是否排除ST股票
+    exclude_suspend: bool = True              # 是否排除停牌股票
 
 
 @app.post("/api/scan/start")
@@ -1074,7 +1134,11 @@ async def start_buy_scan(
         }
 
     # 启动异步任务
-    asyncio.create_task(multi_user_buy_scan_task(user_id, request.types, request.limit))
+    asyncio.create_task(multi_user_buy_scan_task(
+        user_id, request.types, request.limit,
+        request.stock_codes, request.industries, request.areas,
+        request.exclude_st, request.exclude_suspend
+    ))
 
     return {"message": "买点扫描任务已启动", "status": "started", "user_id": user_id}
 
@@ -1101,7 +1165,11 @@ async def start_sell_scan(
         }
 
     # 启动异步任务
-    asyncio.create_task(multi_user_sell_scan_task(user_id, request.types, request.limit))
+    asyncio.create_task(multi_user_sell_scan_task(
+        user_id, request.types, request.limit,
+        request.stock_codes, request.industries, request.areas,
+        request.exclude_st, request.exclude_suspend
+    ))
 
     return {"message": "卖点扫描任务已启动", "status": "started", "user_id": user_id}
 
@@ -1186,6 +1254,224 @@ async def get_stock_list_api(limit: int = 100):
         return {"stocks": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============ 筛选数据接口 ============
+
+@app.get("/api/industries")
+async def get_industries():
+    """获取所有行业及其股票数量"""
+    try:
+        import sqlite3
+        db_path = Path(__file__).parent.parent / "chan.db"
+        if not db_path.exists():
+            return {"industries": []}
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT industry, COUNT(*) as count
+            FROM stock_info
+            WHERE industry IS NOT NULL AND industry != ''
+            GROUP BY industry
+            ORDER BY count DESC
+        """)
+        industries = [{"name": row[0], "count": row[1]} for row in cursor.fetchall()]
+        conn.close()
+
+        return {"industries": industries}
+    except Exception as e:
+        print(f"获取行业列表失败: {e}")
+        return {"industries": []}
+
+
+@app.get("/api/areas")
+async def get_areas():
+    """获取所有地区及其股票数量"""
+    try:
+        import sqlite3
+        db_path = Path(__file__).parent.parent / "chan.db"
+        if not db_path.exists():
+            return {"areas": []}
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT area, COUNT(*) as count
+            FROM stock_info
+            WHERE area IS NOT NULL AND area != ''
+            GROUP BY area
+            ORDER BY count DESC
+        """)
+        areas = [{"name": row[0], "count": row[1]} for row in cursor.fetchall()]
+        conn.close()
+
+        return {"areas": areas}
+    except Exception as e:
+        print(f"获取地区列表失败: {e}")
+        return {"areas": []}
+
+
+@app.get("/api/stock/{code}/signals")
+async def get_stock_signals(code: str):
+    """获取指定股票的买卖点摘要（用于快速分析）"""
+    try:
+        ChanAnalyzer = import_chan_analyzer()
+        analyzer = ChanAnalyzer(code=code)
+        analysis = analyzer.get_analysis()
+
+        # 提取最新买/卖点
+        latest_buy = None
+        latest_sell = None
+
+        for signal in analysis.get('buy_signals', []):
+            if not latest_buy or signal['date'] > latest_buy['date']:
+                latest_buy = signal
+
+        for signal in analysis.get('sell_signals', []):
+            if not latest_sell or signal['date'] > latest_sell['date']:
+                latest_sell = signal
+
+        return {
+            "code": code,
+            "current_price": analysis.get('current_price', 0),
+            "latest_buy": latest_buy,
+            "latest_sell": latest_sell
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ranking")
+async def get_ranking(
+    rank_type: str = "change_pct",  # change_pct(涨跌幅), amount(成交额), turnover_rate(换手率)
+    top_n: int = 20
+):
+    """获取每日排行榜数据（使用tushare API）
+
+    Args:
+        rank_type: 排行类型
+            - change_pct: 涨跌幅排行
+            - amount: 成交额排行
+            - turnover_rate: 换手率排行
+        top_n: 返回前N只股票
+    """
+    try:
+        import os
+        import tushare as ts
+        from datetime import datetime
+
+        token = os.environ.get("TUSHARE_TOKEN")
+        if not token:
+            return {"stocks": [], "error": "未配置TUSHARE_TOKEN"}
+
+        ts.set_token(token)
+        pro = ts.pro_api()
+
+        # 获取最新交易日
+        trade_cal = pro.trade_cal(exchange='SSE', start_date='20200101', end_date=datetime.now().strftime('%Y%m%d'))
+        trade_cal = trade_cal[trade_cal['is_open'] == 1]
+        if trade_cal.empty:
+            return {"stocks": [], "error": "无交易日数据"}
+
+        latest_date = trade_cal['cal_date'].max()
+
+        # 获取日线行情数据（包含涨跌幅和成交额）
+        df = pro.daily(trade_date=latest_date)
+
+        # 获取换手率数据
+        df_basic = pro.daily_basic(trade_date=latest_date, fields='ts_code,turnover_rate')
+
+        if df.empty:
+            return {"stocks": [], "error": "暂无数据"}
+
+        # 合并数据
+        if not df_basic.empty:
+            df = df.merge(df_basic, on='ts_code', how='left')
+
+        # 过滤掉ST股票和退市股票
+        df = df[~df['ts_code'].str.contains('ST|PT')]
+
+        # 根据排行类型排序
+        if rank_type == "change_pct":
+            # 涨跌幅榜（排除涨幅为0的）
+            df = df[df['pct_chg'] != 0].sort_values('pct_chg', ascending=False)
+            rank_name = "涨跌幅榜"
+        elif rank_type == "amount":
+            # 成交额榜
+            df = df.sort_values('amount', ascending=False)
+            rank_name = "成交额榜"
+        elif rank_type == "turnover_rate":
+            # 换手率榜
+            df = df.sort_values('turnover_rate', ascending=False)
+            rank_name = "换手率榜"
+        else:
+            return {"stocks": [], "error": "不支持的排行类型"}
+
+        # 取前N名
+        df = df.head(top_n)
+
+        # 获取股票名称
+        stock_names = {}
+        for ts_code in df['ts_code'].tolist():
+            code = ts_code.split('.')[0]
+            name = get_stock_name_by_code(code)
+            stock_names[ts_code] = name
+
+        # 构建返回数据
+        stocks = []
+        for _, row in df.iterrows():
+            ts_code = row['ts_code']
+            code = ts_code.split('.')[0]
+            pct_chg = row.get('pct_chg', 0)
+            turnover = row.get('turnover_rate')
+
+            stocks.append({
+                "code": code,
+                "name": stock_names.get(ts_code, ''),
+                "close": row['close'],
+                "change_pct": pct_chg / 100 if pd.notna(pct_chg) else 0,  # 转换为小数
+                "turnover_rate": turnover if pd.notna(turnover) else 0,
+                "volume": row['vol'],
+                "amount": row['amount']
+            })
+
+        # 格式化日期
+        date_str = f"{latest_date[:4]}-{latest_date[4:6]}-{latest_date[6:]}"
+
+        return {
+            "rank_type": rank_type,
+            "rank_name": rank_name,
+            "date": date_str,
+            "stocks": stocks
+        }
+
+    except Exception as e:
+        print(f"获取排行榜失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"stocks": [], "error": str(e)}
+
+
+def get_stock_name_by_code(code: str) -> str:
+    """根据股票代码获取股票名称"""
+    try:
+        import sqlite3
+        db_path = Path(__file__).parent.parent / "chan.db"
+        if not db_path.exists():
+            return ""
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM stock_info WHERE code = ?", (code,))
+        result = cursor.fetchone()
+        conn.close()
+
+        return result[0] if result else ""
+    except:
+        return ""
 
 
 # ============ 个股分析接口 ============

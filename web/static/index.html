@@ -285,6 +285,31 @@
       color: var(--text-tertiary);
     }
 
+    /* 下拉选择框 */
+    .select-field {
+      width: 100%;
+      padding: var(--space-md);
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      color: var(--text-primary);
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      outline: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .select-field:focus {
+      border-color: var(--zhu-red);
+      box-shadow: 0 0 0 3px var(--zhu-red-dim);
+    }
+
+    .select-field option {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+    }
+
     /* === 按钮组件 === */
     .btn {
       display: inline-flex;
@@ -320,6 +345,17 @@
 
     .btn-full {
       width: 100%;
+    }
+
+    .btn-secondary {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-tertiary);
+      border-color: var(--text-secondary);
     }
 
     /* === Checkbox 选项 === */
@@ -962,6 +998,243 @@
       color: #f59e0b;
       background: rgba(245, 158, 11, 0.15);
     }
+
+    /* ============================================
+       智能筛选页面样式
+       ============================================ */
+
+    /* 筛选页面布局 */
+    .filter-layout {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: var(--space-lg);
+    }
+
+    @media (max-width: 900px) {
+      .filter-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* 左侧筛选面板 */
+    .filter-sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-md);
+      max-height: calc(100vh - 140px);
+      overflow-y: auto;
+      position: sticky;
+      top: var(--space-lg);
+    }
+
+    /* 右侧结果区 */
+    .filter-results {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-md);
+    }
+
+    /* 筛选操作按钮 */
+    .filter-actions {
+      display: flex;
+      gap: var(--space-sm);
+      margin-bottom: var(--space-sm);
+    }
+
+    .btn-text {
+      padding: var(--space-xs) var(--space-sm);
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    .btn-text:hover {
+      color: var(--zhu-red);
+    }
+
+    /* 选中数量标签 */
+    .selected-count {
+      margin-left: auto;
+      font-size: 0.75rem;
+      color: var(--zhu-red);
+    }
+
+    /* 快速分析结果 */
+    .quick-result-content {
+      padding: var(--space-md);
+      background: var(--bg-secondary);
+      border-radius: var(--radius-md);
+    }
+
+    .quick-result-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: var(--space-xs) 0;
+      font-size: 0.85rem;
+    }
+
+    .quick-result-label {
+      color: var(--text-tertiary);
+    }
+
+    .quick-result-value {
+      font-family: var(--font-mono);
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    /* 单选按钮组 */
+    .radio-group {
+      display: flex;
+      gap: var(--space-sm);
+    }
+
+    .radio-item input {
+      display: none;
+    }
+
+    .radio-item {
+      flex: 1;
+      padding: var(--space-sm);
+      text-align: center;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 0.85rem;
+    }
+
+    .radio-item.selected {
+      background: var(--zhu-red-dim);
+      border-color: var(--zhu-red);
+      color: var(--zhu-red);
+    }
+
+    /* 加载提示 */
+    .loading-industries {
+      padding: var(--space-md);
+      text-align: center;
+      color: var(--text-tertiary);
+      font-size: 0.85rem;
+    }
+
+    /* 行业复选框特殊样式 */
+    #industryFilterGroup .checkbox-item {
+      font-size: 0.8rem;
+      padding: var(--space-xs) var(--space-sm);
+    }
+
+    /* 排行榜样式 */
+    .ranking-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: var(--space-sm) 0;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .ranking-date {
+      font-size: 0.75rem;
+      color: var(--text-tertiary);
+    }
+
+    .ranking-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-xs);
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .ranking-item {
+      display: grid;
+      grid-template-columns: 30px 1fr 1fr 1fr 1fr;
+      gap: var(--space-sm);
+      align-items: center;
+      padding: var(--space-sm);
+      background: var(--bg-secondary);
+      border-radius: var(--radius-sm);
+      font-size: 0.8rem;
+      transition: background 0.2s;
+    }
+
+    .ranking-item:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .ranking-rank {
+      font-weight: 600;
+      text-align: center;
+      color: var(--text-secondary);
+    }
+
+    .ranking-rank.rank-top-1 {
+      color: #ffd700;
+      font-size: 1rem;
+    }
+
+    .ranking-rank.rank-top-2 {
+      color: #c0c0c0;
+    }
+
+    .ranking-rank.rank-top-3 {
+      color: #cd7f32;
+    }
+
+    .ranking-code {
+      font-family: var(--font-mono);
+      color: var(--text-primary);
+    }
+
+    .ranking-name {
+      color: var(--text-secondary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .ranking-price {
+      font-family: var(--font-mono);
+      text-align: right;
+      color: var(--text-primary);
+    }
+
+    .ranking-change {
+      font-family: var(--font-mono);
+      text-align: right;
+      font-weight: 500;
+    }
+
+    .text-up {
+      color: var(--zhu-red);
+    }
+
+    .text-down {
+      color: var(--fei-green);
+    }
+
+    /* 移动端适配 */
+    @media (max-width: 600px) {
+      .ranking-item {
+        grid-template-columns: 25px 1fr 1fr;
+        gap: var(--space-xs);
+      }
+
+      .ranking-name,
+      .ranking-price {
+        display: none;
+      }
+    }
+
+    #industryFilterGroup small {
+      color: var(--text-tertiary);
+      font-size: 0.7rem;
+    }
   </style>
 </head>
 <body>
@@ -976,6 +1249,7 @@
       <button class="nav-tab active" data-page="analysis">📈 个股分析</button>
       <button class="nav-tab" data-page="buy-scan">⚡ 买点扫描</button>
       <button class="nav-tab" data-page="sell-scan">💰 卖点扫描</button>
+      <button class="nav-tab" data-page="smart-filter">📊 智能筛选</button>
       <button class="nav-tab" data-page="theory">📚 缠论说明</button>
       <button class="nav-tab" data-page="settings">⚙️ 设置</button>
     </nav>
@@ -1209,6 +1483,196 @@
         </div>
       </div>
 
+      <!-- 智能筛选页面 -->
+      <div class="page" id="page-smart-filter">
+        <div class="filter-layout">
+          <!-- 左侧筛选面板 -->
+          <aside class="filter-sidebar">
+            <!-- 个股快速分析 -->
+            <div class="card">
+              <div class="card-title">🎯 个股快速分析</div>
+              <div class="input-group">
+                <label class="input-label">股票代码</label>
+                <input type="text" class="input-field" id="quickAnalyzeCode"
+                       placeholder="输入代码，如 000001" maxlength="6">
+              </div>
+              <button class="btn btn-primary btn-full" id="quickAnalyzeBtn">
+                <span>⚡</span> 立即分析
+              </button>
+
+              <!-- 快速分析结果 -->
+              <div id="quickAnalyzeResult" style="display: none;">
+                <div class="divider"></div>
+                <div class="quick-result-content" id="quickAnalyzeContent"></div>
+              </div>
+            </div>
+
+            <!-- 行业筛选 -->
+            <div class="card">
+              <div class="card-title">
+                🏭 行业筛选
+                <span class="selected-count" id="industryCount">(0)</span>
+              </div>
+              <div class="filter-actions">
+                <button class="btn-text" id="selectAllIndustries">全选</button>
+                <button class="btn-text" id="clearAllIndustries">清空</button>
+              </div>
+              <div class="checkbox-group" id="industryFilterGroup">
+                <div class="loading-industries">加载中...</div>
+              </div>
+            </div>
+
+            <!-- 地区筛选 -->
+            <div class="card">
+              <div class="card-title">
+                📍 地区筛选
+                <span class="selected-count" id="areaCount">(0)</span>
+              </div>
+              <div class="filter-actions">
+                <button class="btn-text" id="selectAllAreas">全选</button>
+                <button class="btn-text" id="clearAllAreas">清空</button>
+              </div>
+              <div class="checkbox-group" id="areaFilterGroup">
+                <div style="padding:var(--space-md);color:var(--text-tertiary);text-align:center;">加载中...</div>
+              </div>
+            </div>
+
+            <!-- 扫描设置 -->
+            <div class="card">
+              <div class="card-title">🔧 扫描设置</div>
+
+              <div class="input-group">
+                <label class="input-label">扫描类型</label>
+                <div class="radio-group">
+                  <label class="radio-item selected">
+                    <input type="radio" name="filterScanType" value="buy" checked>
+                    买点扫描
+                  </label>
+                  <label class="radio-item">
+                    <input type="radio" name="filterScanType" value="sell">
+                    卖点扫描
+                  </label>
+                </div>
+              </div>
+
+              <div class="input-group" id="filterBuyTypes">
+                <label class="input-label">买点类型</label>
+                <div class="checkbox-group">
+                  <label class="checkbox-item selected">
+                    <input type="checkbox" value="1" checked> 一买
+                  </label>
+                  <label class="checkbox-item selected">
+                    <input type="checkbox" value="2" checked> 二买
+                  </label>
+                  <label class="checkbox-item selected">
+                    <input type="checkbox" value="3a" checked> 三买A
+                  </label>
+                  <label class="checkbox-item selected">
+                    <input type="checkbox" value="3b" checked> 三买B
+                  </label>
+                </div>
+              </div>
+
+              <div class="input-group" id="filterSellTypes" style="display: none;">
+                <label class="input-label">卖点类型</label>
+                <div class="checkbox-group">
+                  <label class="checkbox-item selected">
+                    <input type="checkbox" value="2s" checked> 二卖
+                  </label>
+                </div>
+              </div>
+
+              <div class="input-group" id="filterScanSettings">
+                <label class="checkbox-item selected">
+                  <input type="checkbox" id="excludeSt" checked>
+                  排除ST股票
+                </label>
+              </div>
+
+              <button class="btn btn-primary btn-full" id="filterScanBtn">
+                🔍 开始扫描
+              </button>
+            </div>
+
+            <!-- 每日排行榜 -->
+            <div class="card">
+              <div class="card-title">🏆 每日排行榜</div>
+
+              <div class="input-group">
+                <label class="input-label">排行类型</label>
+                <select class="select-field" id="rankingType">
+                  <option value="change_pct">📈 涨跌幅榜</option>
+                  <option value="amount">💰 成交额榜</option>
+                  <option value="turnover_rate">📊 成交量榜</option>
+                </select>
+              </div>
+
+              <button class="btn btn-secondary btn-full" id="loadRankingBtn">
+                🏆 查看排行榜
+              </button>
+
+              <!-- 排行榜结果 -->
+              <div id="rankingResult" style="display: none;">
+                <div class="divider"></div>
+                <div class="ranking-header">
+                  <span id="rankingTitle">涨跌幅榜</span>
+                  <span class="ranking-date" id="rankingDate"></span>
+                </div>
+                <div class="ranking-list" id="rankingList">
+                  <!-- 动态填充 -->
+                </div>
+              </div>
+            </div>
+          </aside>
+
+          <!-- 右侧结果展示 -->
+          <main class="filter-results">
+            <!-- 进度卡片 -->
+            <div class="card" id="filterProgressCard" style="display: none;">
+              <div class="progress-bar">
+                <div class="progress-fill" id="filterProgressFill" style="width: 0%"></div>
+              </div>
+              <div class="progress-text">
+                <span id="filterProgressStatus">扫描中...</span>
+                <span id="filterProgressDetail">0/0</span>
+              </div>
+            </div>
+
+            <!-- 统计 -->
+            <div class="stats-row" id="filterStats" style="display: none;">
+              <div class="stat-card">
+                <div class="stat-label">找到</div>
+                <div class="stat-value" id="filterTotal">0</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">一买</div>
+                <div class="stat-value" id="filterBuy1Count">0</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">二买</div>
+                <div class="stat-value" id="filterBuy2Count">0</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">三买</div>
+                <div class="stat-value" id="filterBuy3Count">0</div>
+              </div>
+            </div>
+
+            <!-- 结果列表 -->
+            <div class="stock-list" id="filterResults">
+              <!-- 动态填充 -->
+            </div>
+
+            <!-- 空状态 -->
+            <div class="empty-state" id="filterEmpty">
+              <div class="empty-icon">📊</div>
+              <div class="empty-text">设置筛选条件后开始扫描</div>
+              <div class="empty-hint">选择行业、地区或输入股票代码</div>
+            </div>
+          </main>
+        </div>
+      </div>
+
       <!-- 缠论说明页面 -->
       <div class="page" id="page-theory">
         <div class="card">
@@ -1391,23 +1855,63 @@
 
       // 获取或创建用户token
       async ensureUser() {
-        if (this.initPromise) {
+        // 检查是否已有有效token
+        let token = localStorage.getItem('chanalyzer_token');
+
+        // 如果没有token或之前的初始化失败，重新初始化
+        if (!token) {
+          this.initPromise = (async () => {
+            try {
+              const response = await fetch(`${API_BASE}/auth/session`);
+              if (response.ok) {
+                const data = await response.json();
+                token = data.token;
+                localStorage.setItem('chanalyzer_token', token);
+                return token;
+              } else {
+                throw new Error(`创建会话失败: ${response.status}`);
+              }
+            } catch (error) {
+              console.error('[AuthManager] ensureUser失败:', error);
+              // 失败时清除缓存的Promise，允许重试
+              this.initPromise = null;
+              throw error;
+            }
+          })();
+
           return this.initPromise;
         }
 
+        // 验证现有token是否有效
         this.initPromise = (async () => {
-          let token = localStorage.getItem('chanalyzer_token');
-          if (!token) {
-            // 创建新用户
-            const response = await fetch(`${API_BASE}/auth/session`);
+          try {
+            const response = await fetch(`${API_BASE}/auth/session`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
             if (response.ok) {
               const data = await response.json();
-              token = data.token;
-              localStorage.setItem('chanalyzer_token', token);
+              // 如果返回了新token，更新它
+              if (data.token && data.token !== token) {
+                localStorage.setItem('chanalyzer_token', data.token);
+                token = data.token;
+              }
+              return token;
+            } else {
+              // token无效，创建新的
+              const newResponse = await fetch(`${API_BASE}/auth/session`);
+              if (newResponse.ok) {
+                const data = await newResponse.json();
+                token = data.token;
+                localStorage.setItem('chanalyzer_token', token);
+                return token;
+              }
+              throw new Error('刷新token失败');
             }
+          } catch (error) {
+            console.error('[AuthManager] token验证失败:', error);
+            this.initPromise = null;
+            throw error;
           }
-          this.initialized = true;
-          return token;
         })();
 
         return this.initPromise;
@@ -1448,7 +1952,7 @@
     const pages = document.querySelectorAll('.page');
 
     navTabs.forEach(tab => {
-      tab.addEventListener('click', () => {
+      tab.addEventListener('click', async () => {
         const targetPage = tab.dataset.page;
 
         // 更新标签状态
@@ -1468,6 +1972,15 @@
           loadBuyScanHistory();
         } else if (targetPage === 'sell-scan') {
           loadSellScanHistory();
+        } else if (targetPage === 'smart-filter') {
+          // 智能筛选页面：确保用户已初始化并加载行业/地区列表
+          await AuthManager.ensureUser();
+          if (!filterState.industriesLoaded) {
+            loadIndustries();
+          }
+          if (!filterState.areasLoaded) {
+            loadAreas();
+          }
         }
       });
     });
@@ -1516,6 +2029,9 @@
         // 切换 checkbox 状态
         checkbox.checked = !checkbox.checked;
         updateSelected();
+
+        // 手动触发 change 事件，让其他监听器能够响应
+        checkbox.dispatchEvent(new Event('change', { bubbles: true }));
       });
 
       // 初始化状态
@@ -2215,6 +2731,557 @@
       } catch (error) {
         console.error('加载历史数据失败:', error);
       }
+    }
+
+    // ============================================
+    // 智能筛选页面逻辑
+    // ============================================
+
+    // 智能筛选状态
+    const filterState = {
+      industriesLoaded: false,
+      areasLoaded: false,
+      scanning: false,
+      pollInterval: null
+    };
+
+    // 加载行业列表
+    async function loadIndustries() {
+      if (filterState.industriesLoaded) return;
+
+      try {
+        const response = await fetch(`${API_BASE}/industries`);
+        const data = await response.json();
+        const container = document.getElementById('industryFilterGroup');
+
+        if (data.industries && data.industries.length > 0) {
+          container.innerHTML = data.industries.map(ind => `
+            <label class="checkbox-item">
+              <input type="checkbox" value="${ind.name}">
+              ${ind.name} <small>(${ind.count})</small>
+            </label>
+          `).join('');
+
+          // 绑定事件
+          container.querySelectorAll('.checkbox-item').forEach(setupCheckbox);
+
+          // 更新选中数量
+          updateIndustryCount();
+        } else {
+          container.innerHTML = '<div style="padding:var(--space-md);color:var(--text-tertiary);">暂无行业数据</div>';
+        }
+
+        filterState.industriesLoaded = true;
+      } catch (error) {
+        console.error('加载行业失败:', error);
+        document.getElementById('industryFilterGroup').innerHTML =
+          '<div style="padding:var(--space-md);color:var(--text-tertiary);">加载失败</div>';
+      }
+    }
+
+    // 更新行业选中数量
+    function updateIndustryCount() {
+      const count = document.querySelectorAll('#industryFilterGroup input:checked').length;
+      document.getElementById('industryCount').textContent = `(${count})`;
+    }
+
+    // 行业全选/清空按钮
+    document.getElementById('selectAllIndustries')?.addEventListener('click', () => {
+      document.querySelectorAll('#industryFilterGroup input[type="checkbox"]').forEach(cb => {
+        cb.checked = true;
+        cb.parentElement.classList.add('selected');
+      });
+      updateIndustryCount();
+    });
+
+    document.getElementById('clearAllIndustries')?.addEventListener('click', () => {
+      document.querySelectorAll('#industryFilterGroup input[type="checkbox"]').forEach(cb => {
+        cb.checked = false;
+        cb.parentElement.classList.remove('selected');
+      });
+      updateIndustryCount();
+    });
+
+    // 加载地区列表
+    async function loadAreas() {
+      if (filterState.areasLoaded) return;
+
+      try {
+        const response = await fetch(`${API_BASE}/areas`);
+        const data = await response.json();
+        const container = document.getElementById('areaFilterGroup');
+
+        if (data.areas && data.areas.length > 0) {
+          container.innerHTML = data.areas.map(area => `
+            <label class="checkbox-item">
+              <input type="checkbox" value="${area.name}">
+              ${area.name} <small>(${area.count})</small>
+            </label>
+          `).join('');
+
+          // 绑定事件
+          container.querySelectorAll('.checkbox-item').forEach(setupCheckbox);
+
+          // 更新选中数量
+          updateAreaCount();
+        } else {
+          container.innerHTML = '<div style="padding:var(--space-md);color:var(--text-tertiary);">暂无地区数据</div>';
+        }
+
+        filterState.areasLoaded = true;
+      } catch (error) {
+        console.error('加载地区失败:', error);
+        document.getElementById('areaFilterGroup').innerHTML =
+          '<div style="padding:var(--space-md);color:var(--text-tertiary);">加载失败</div>';
+      }
+    }
+
+    // 更新地区选中数量
+    function updateAreaCount() {
+      const count = document.querySelectorAll('#areaFilterGroup input:checked').length;
+      document.getElementById('areaCount').textContent = `(${count})`;
+    }
+
+    // 地区全选/清空按钮
+    document.getElementById('selectAllAreas')?.addEventListener('click', () => {
+      document.querySelectorAll('#areaFilterGroup input[type="checkbox"]').forEach(cb => {
+        cb.checked = true;
+        cb.parentElement.classList.add('selected');
+      });
+      updateAreaCount();
+    });
+
+    document.getElementById('clearAllAreas')?.addEventListener('click', () => {
+      document.querySelectorAll('#areaFilterGroup input[type="checkbox"]').forEach(cb => {
+        cb.checked = false;
+        cb.parentElement.classList.remove('selected');
+      });
+      updateAreaCount();
+    });
+
+    // 监听地区复选框变化
+    document.getElementById('areaFilterGroup')?.addEventListener('change', (e) => {
+      if (e.target.type === 'checkbox') {
+        updateAreaCount();
+      }
+    });
+
+    // 加载排行榜
+    document.getElementById('loadRankingBtn')?.addEventListener('click', async () => {
+      const rankType = document.getElementById('rankingType').value;
+      const btn = document.getElementById('loadRankingBtn');
+      const resultDiv = document.getElementById('rankingResult');
+      const listDiv = document.getElementById('rankingList');
+
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳</span> 加载中...';
+
+      try {
+        const response = await fetch(`${API_BASE}/ranking?rank_type=${rankType}&top_n=20`);
+        const data = await response.json();
+
+        if (data.error) {
+          alert('获取排行榜失败: ' + data.error);
+          btn.disabled = false;
+          btn.innerHTML = '🏆 查看排行榜';
+          return;
+        }
+
+        // 更新标题和日期
+        const rankTitles = {
+          'change_pct': '📈 涨跌幅榜',
+          'amount': '💰 成交额榜',
+          'turnover_rate': '📊 成交量榜'
+        };
+        document.getElementById('rankingTitle').textContent = rankTitles[rankType] || '排行榜';
+        document.getElementById('rankingDate').textContent = data.date || '';
+
+        // 渲染排行榜列表
+        listDiv.innerHTML = data.stocks.map((stock, index) => {
+          const rankClass = index < 3 ? `rank-top-${index + 1}` : '';
+          const changePct = stock.change_pct !== null && stock.change_pct !== undefined
+            ? (stock.change_pct >= 0 ? '+' : '') + (stock.change_pct * 100).toFixed(2) + '%'
+            : '--';
+          const changeClass = stock.change_pct >= 0 ? 'text-up' : 'text-down';
+
+          return `
+            <div class="ranking-item" data-code="${stock.code}">
+              <span class="ranking-rank ${rankClass}">${index + 1}</span>
+              <span class="ranking-code">${stock.code}</span>
+              <span class="ranking-name">${stock.name}</span>
+              <span class="ranking-price">${stock.close ? stock.close.toFixed(2) : '--'}</span>
+              <span class="ranking-change ${changeClass}">${changePct}</span>
+            </div>
+          `;
+        }).join('');
+
+        resultDiv.style.display = 'block';
+
+      } catch (error) {
+        console.error('加载排行榜失败:', error);
+        alert('加载排行榜失败: ' + error.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '🏆 查看排行榜';
+      }
+    });
+
+    // 监听行业复选框变化
+    document.getElementById('industryFilterGroup')?.addEventListener('change', (e) => {
+      if (e.target.type === 'checkbox') {
+        updateIndustryCount();
+      }
+    });
+
+    // 扫描类型切换
+    document.querySelectorAll('input[name="filterScanType"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        const buyTypes = document.getElementById('filterBuyTypes');
+        const sellTypes = document.getElementById('filterSellTypes');
+
+        if (e.target.value === 'buy') {
+          buyTypes.style.display = 'block';
+          sellTypes.style.display = 'none';
+        } else {
+          buyTypes.style.display = 'none';
+          sellTypes.style.display = 'block';
+        }
+
+        // 更新单选按钮样式
+        document.querySelectorAll('input[name="filterScanType"]').forEach(r => {
+          r.parentElement.classList.toggle('selected', r.checked);
+        });
+      });
+
+      // 初始化选中状态
+      if (radio.checked) {
+        radio.parentElement.classList.add('selected');
+      }
+    });
+
+    // 个股快速分析
+    document.getElementById('quickAnalyzeBtn')?.addEventListener('click', async () => {
+      const code = document.getElementById('quickAnalyzeCode').value.trim();
+      if (!code) {
+        alert('请输入股票代码');
+        return;
+      }
+
+      await AuthManager.ensureUser();
+
+      const btn = document.getElementById('quickAnalyzeBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span>⏳</span> 分析中...';
+
+      try {
+        const response = await AuthManager.fetch(`${API_BASE}/stock/${code}/signals`);
+        const data = await response.json();
+
+        const resultDiv = document.getElementById('quickAnalyzeResult');
+        const contentDiv = document.getElementById('quickAnalyzeContent');
+
+        let html = '';
+        html += `<div class="quick-result-item">
+          <span class="quick-result-label">当前价格</span>
+          <span class="quick-result-value">${data.current_price ? data.current_price.toFixed(2) : '--'}</span>
+        </div>`;
+
+        if (data.latest_buy) {
+          const typeLabel = BS_TYPE_LABELS[data.latest_buy.type] || data.latest_buy.type;
+          html += `<div class="quick-result-item">
+            <span class="quick-result-label">最新买点</span>
+            <span class="stock-signal">${typeLabel}</span>
+          </div>`;
+          html += `<div class="quick-result-item">
+            <span class="quick-result-label">信号日期</span>
+            <span class="quick-result-value">${data.latest_buy.date || '--'}</span>
+          </div>`;
+          if (data.latest_buy.price) {
+            html += `<div class="quick-result-item">
+              <span class="quick-result-label">信号价格</span>
+              <span class="quick-result-value">${data.latest_buy.price.toFixed(2)}</span>
+            </div>`;
+          }
+        }
+
+        if (data.latest_sell) {
+          const typeLabel = BS_TYPE_LABELS[data.latest_sell.type] || data.latest_sell.type;
+          html += `<div class="quick-result-item">
+            <span class="quick-result-label">最新卖点</span>
+            <span class="stock-signal sell">${typeLabel}</span>
+          </div>`;
+          html += `<div class="quick-result-item">
+            <span class="quick-result-label">信号日期</span>
+            <span class="quick-result-value">${data.latest_sell.date || '--'}</span>
+          </div>`;
+        }
+
+        if (!data.latest_buy && !data.latest_sell) {
+          html += '<div class="quick-result-item"><span class="quick-result-value">暂无买卖点信号</span></div>';
+        }
+
+        contentDiv.innerHTML = html;
+        resultDiv.style.display = 'block';
+      } catch (error) {
+        alert('分析失败: ' + error.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>⚡</span> 立即分析';
+      }
+    });
+
+    // 智能筛选扫描
+    document.getElementById('filterScanBtn')?.addEventListener('click', async () => {
+      if (filterState.scanning) return;
+
+      // 确保用户已初始化并检查token
+      await AuthManager.ensureUser();
+
+      // 获取筛选参数
+      const scanType = document.querySelector('input[name="filterScanType"]:checked').value;
+      const industries = Array.from(document.querySelectorAll('#industryFilterGroup input:checked'))
+        .map(cb => cb.value);
+      const areas = Array.from(document.querySelectorAll('#areaFilterGroup input:checked'))
+        .map(cb => cb.value);
+      const excludeSt = document.getElementById('excludeSt').checked;
+
+      // 获取选中的买卖点类型
+      let types = [];
+      if (scanType === 'buy') {
+        types = Array.from(document.querySelectorAll('#filterBuyTypes input:checked'))
+          .map(cb => cb.value);
+      } else {
+        types = Array.from(document.querySelectorAll('#filterSellTypes input:checked'))
+          .map(cb => cb.value);
+      }
+
+      if (types.length === 0) {
+        alert('请至少选择一种买卖点类型');
+        return;
+      }
+
+      // 更新UI状态
+      filterState.scanning = true;
+      const btn = document.getElementById('filterScanBtn');
+      btn.disabled = true;
+      btn.innerHTML = '⏳ 扫描中...';
+
+      document.getElementById('filterProgressCard').style.display = 'block';
+      document.getElementById('filterEmpty').style.display = 'none';
+      document.getElementById('filterResults').innerHTML = '';
+
+      // 更新进度显示
+      document.getElementById('filterProgressStatus').textContent = '启动扫描任务...';
+      document.getElementById('filterProgressDetail').textContent = '0';
+
+      try {
+        const endpoint = scanType === 'buy' ? `${API_BASE}/scan/buy/start` : `${API_BASE}/scan/sell/start`;
+
+        const response = await AuthManager.fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            types: types,
+            limit: 0,  // 0表示扫描所有符合条件的股票
+            industries: industries.length > 0 ? industries : null,
+            areas: areas.length > 0 ? areas : null,
+            exclude_st: excludeSt
+          })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.detail || result.message || '启动扫描失败');
+        }
+
+        if (result.status === 'running') {
+          alert(result.message || '已有扫描任务正在进行中');
+          resetFilterScanUI();
+          return;
+        }
+
+        // 开始轮询
+        pollFilterScanStatus(scanType);
+      } catch (error) {
+        console.error('启动扫描失败:', error);
+        alert(`启动扫描失败: ${error.message}`);
+        resetFilterScanUI();
+      }
+    });
+
+    // 轮询筛选扫描状态
+    function pollFilterScanStatus(scanType) {
+      if (filterState.pollInterval) return;
+
+      filterState.pollInterval = setInterval(async () => {
+        try {
+          const endpoint = scanType === 'buy' ? `${API_BASE}/scan/buy/status` : `${API_BASE}/scan/sell/status`;
+          const response = await AuthManager.fetch(endpoint);
+          if (!response.ok) return;
+
+          const status = await response.json();
+          updateFilterScanProgress(status);
+
+          if (status.error) {
+            clearInterval(filterState.pollInterval);
+            filterState.pollInterval = null;
+            alert(`扫描失败: ${status.error}`);
+            resetFilterScanUI();
+            return;
+          }
+
+          if (!status.scanning) {
+            clearInterval(filterState.pollInterval);
+            filterState.pollInterval = null;
+            await loadFilterScanResults(scanType);
+            resetFilterScanUI();
+          }
+        } catch (error) {
+          console.error('获取扫描状态失败:', error);
+        }
+      }, 1000);
+    }
+
+    // 更新筛选扫描进度
+    function updateFilterScanProgress(status) {
+      const progressFill = document.getElementById('filterProgressFill');
+      const progressStatus = document.getElementById('filterProgressStatus');
+      const progressDetail = document.getElementById('filterProgressDetail');
+
+      if (status.total > 0) {
+        const percent = Math.min(100, (status.progress / status.total * 100));
+        progressFill.style.width = `${percent}%`;
+        progressStatus.textContent = `扫描中 ${status.progress}/${status.total}`;
+      } else {
+        progressStatus.textContent = status.message || '准备中...';
+      }
+      progressDetail.textContent = `已找到 ${status.found} 只`;
+    }
+
+    // 加载筛选扫描结果
+    async function loadFilterScanResults(scanType) {
+      try {
+        const endpoint = scanType === 'buy' ? `${API_BASE}/scan/buy/results` : `${API_BASE}/scan/sell/results`;
+        const response = await AuthManager.fetch(endpoint);
+        if (!response.ok) {
+          console.error('[筛选扫描] 获取结果失败:', response.status);
+          return;
+        }
+
+        const data = await response.json();
+        const stocks = data.stocks || [];
+
+        renderFilterStockResults(stocks, scanType);
+        updateFilterScanStats(stocks, scanType);
+      } catch (error) {
+        console.error('[筛选扫描] 获取扫描结果失败:', error);
+      }
+    }
+
+    // 渲染筛选扫描结果
+    function renderFilterStockResults(stocks, scanType) {
+      const resultsContainer = document.getElementById('filterResults');
+      const emptyState = document.getElementById('filterEmpty');
+      const statsCard = document.getElementById('filterStats');
+
+      if (!stocks || stocks.length === 0) {
+        resultsContainer.innerHTML = '';
+        emptyState.style.display = 'block';
+        statsCard.style.display = 'none';
+        return;
+      }
+
+      emptyState.style.display = 'none';
+      statsCard.style.display = 'flex';
+
+      // 按最新信号日期排序
+      const sortedStocks = [...stocks].sort((a, b) => {
+        if (!a.latest_signal?.date || !b.latest_signal?.date) return 0;
+        return new Date(b.latest_signal.date) - new Date(a.latest_signal.date);
+      });
+
+      resultsContainer.innerHTML = sortedStocks.map(stock => {
+        const signal = stock.latest_signal;
+        const isSell = scanType === 'sell';
+
+        let typeLabel = '--';
+        if (signal && signal.type) {
+          typeLabel = BS_TYPE_LABELS[signal.type] || signal.type;
+        } else if (stock.signals && stock.signals.length > 0) {
+          typeLabel = BS_TYPE_LABELS[stock.signals[0].type] || stock.signals[0].type;
+        }
+
+        const signalDate = signal?.date || (stock.signals?.[0]?.date) || '--';
+        const signalPrice = signal?.price || (stock.signals?.[0]?.price) || 0;
+
+        return `
+          <div class="stock-card" data-code="${stock.code}">
+            <div class="stock-header">
+              <span class="stock-code">${stock.code}</span>
+              <span class="stock-name">${stock.name || ''}</span>
+            </div>
+            <div class="stock-row">
+              <span class="stock-label">当前价格</span>
+              <span class="stock-value">${stock.current_price ? stock.current_price.toFixed(2) : '--'}</span>
+            </div>
+            <div class="stock-row">
+              <span class="stock-label">${isSell ? '卖点' : '买点'}类型</span>
+              <span class="stock-signal ${isSell ? 'sell' : ''}">${typeLabel}</span>
+            </div>
+            <div class="stock-row">
+              <span class="stock-label">信号日期</span>
+              <span class="stock-value">${signalDate}</span>
+            </div>
+            <div class="stock-row">
+              <span class="stock-label">信号价格</span>
+              <span class="stock-value">${signalPrice ? signalPrice.toFixed(2) : '--'}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // 更新筛选扫描统计
+    function updateFilterScanStats(stocks, scanType) {
+      document.getElementById('filterTotal').textContent = stocks.length;
+
+      if (scanType === 'buy') {
+        const stats = { '1': 0, '1p': 0, '2': 0, '3a': 0, '3b': 0 };
+        stocks.forEach(stock => {
+          stock.signals?.forEach(signal => {
+            if (signal.type in stats) {
+              stats[signal.type]++;
+            }
+          });
+        });
+
+        document.getElementById('filterBuy1Count').textContent = stats['1'] + stats['1p'];
+        document.getElementById('filterBuy2Count').textContent = stats['2'];
+        document.getElementById('filterBuy3Count').textContent = stats['3a'] + stats['3b'];
+      } else {
+        // 卖点统计
+        let count2s = 0;
+        stocks.forEach(stock => {
+          stock.signals?.forEach(signal => {
+            if (signal.type === '2s') count2s++;
+          });
+        });
+        document.getElementById('filterBuy1Count').textContent = '-';
+        document.getElementById('filterBuy2Count').textContent = '-';
+        document.getElementById('filterBuy3Count').textContent = count2s > 0 ? count2s : '-';
+      }
+    }
+
+    // 重置筛选扫描UI
+    function resetFilterScanUI() {
+      filterState.scanning = false;
+      const btn = document.getElementById('filterScanBtn');
+      btn.disabled = false;
+      btn.innerHTML = '🔍 开始扫描';
+
+      // 隐藏进度卡片
+      document.getElementById('filterProgressCard').style.display = 'none';
     }
 
     // ============================================

@@ -455,6 +455,11 @@ def scan_stocks(
     min_money_flow: float = 0,
     verbose: bool = True,
     progress_callback: callable = None,
+    # 新增筛选参数
+    industries: List[str] = None,
+    areas: List[str] = None,
+    exclude_st: bool = True,
+    exclude_suspend: bool = True,
 ) -> List[Dict[str, Any]]:
     """
     扫描股票列表
@@ -472,11 +477,41 @@ def scan_stocks(
         min_money_flow: 最小资金流向
         verbose: 是否显示进度条
         progress_callback: 进度回调函数，签名为 callback(current, total, found)
+        industries: 行业筛选列表
+        areas: 地区筛选列表
+        exclude_st: 是否排除ST股票
+        exclude_suspend: 是否排除停牌股票
     """
     if buy_types is None:
         buy_types = ['2', '3a', '3b']
     if sell_types is None:
         sell_types = []
+
+    # 应用筛选条件
+    filtered_codes = stock_codes
+    if industries or areas or exclude_st or exclude_suspend:
+        stock_info_dict = get_stock_info_bulk(stock_codes)
+
+        if industries or areas or exclude_st:
+            filtered_codes = []
+            for code in stock_codes:
+                info = stock_info_dict.get(code, {})
+                # 行业筛选
+                if industries and info.get('industry') not in industries:
+                    continue
+                # 地区筛选
+                if areas and info.get('area') not in areas:
+                    continue
+                # 排除ST
+                if exclude_st and 'ST' in info.get('name', ''):
+                    continue
+                filtered_codes.append(code)
+
+        # 如果指定了 stock_codes 参数（个股模式），使用它而不是筛选后的列表
+        # 这是为了支持先筛选再扫描的场景
+
+    # 使用筛选后的股票列表
+    stock_codes = filtered_codes
 
     # 配置缠论参数
     config = CChanConfig({
