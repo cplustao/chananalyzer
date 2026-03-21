@@ -1367,8 +1367,8 @@ async def get_ranking(
         if not token:
             return {"stocks": [], "error": "未配置TUSHARE_TOKEN"}
 
-        ts.set_token(token)
-        pro = ts.pro_api()
+        # 直接使用 token 初始化，避免写入缓存文件导致权限问题
+        pro = ts.pro_api(token)
 
         # 获取最新交易日
         trade_cal = pro.trade_cal(exchange='SSE', start_date='20200101', end_date=datetime.now().strftime('%Y%m%d'))
