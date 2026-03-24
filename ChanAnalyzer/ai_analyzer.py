@@ -102,8 +102,21 @@ class AIAnalyzer:
         if analysis.get("multi"):
             # 多周期分析
             levels = analysis.get("levels", [])
+
+            # 在顶部显示日线当前价格作为主要参考价格
+            day_level = None
+            for level in levels:
+                if "日线" in level.get("kl_type", ""):
+                    day_level = level
+                    break
+
+            if day_level:
+                lines.append(f"**当前价格（日线）**: {day_level.get('current_price', 0):.2f}")
+                lines.append("")
+
+            # 分别显示各周期分析
             for i, level in enumerate(levels):
-                lines.extend(self._format_level(level, level_num=i+1))
+                lines.extend(self._format_level(level, level_num=i+1, skip_current_price=day_level == level))
                 lines.append("")
         else:
             # 单周期分析
@@ -117,7 +130,7 @@ class AIAnalyzer:
 
         return "\n".join(lines)
 
-    def _format_level(self, level: Dict[str, Any], level_num: int = 1) -> List[str]:
+    def _format_level(self, level: Dict[str, Any], level_num: int = 1, skip_current_price: bool = False) -> List[str]:
         """格式化单级别数据"""
         lines = []
 
@@ -128,7 +141,10 @@ class AIAnalyzer:
         # 时间范围
         lines.append(f"**时间范围**: {level.get('start_date')} ~ {level.get('end_date')}")
         lines.append(f"**K线数量**: {level.get('kline_count')} 根")
-        lines.append(f"**当前价格**: {level.get('current_price', 0):.2f}")
+
+        # 当前价格（可选跳过，因为多周期时已在顶部显示日线价格）
+        if not skip_current_price:
+            lines.append(f"**当前价格**: {level.get('current_price', 0):.2f}")
         lines.append("")
 
         # MACD
