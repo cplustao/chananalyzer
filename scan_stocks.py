@@ -164,7 +164,8 @@ def scan_stocks(
                 result = {
                     'code': code,
                     'signals': matched_signals,
-                    'current_price': analysis.get('current_price', 0) if not analysis.get('multi') else None,
+                    # 多周期分析时，analyzer 会使用日线级别的 current_price
+                    'current_price': analysis.get('current_price', 0),
                 }
 
                 # 获取资金流向
