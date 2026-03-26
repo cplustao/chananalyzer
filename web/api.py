@@ -107,12 +107,26 @@ app.add_middleware(
 # 挂载静态文件目录
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    from fastapi.responses import FileResponse
     from fastapi.responses import RedirectResponse
 
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
     @app.get("/")
-    async def redirect_to_index():
-        return RedirectResponse(url="/static/index.html")
+    async def login_page():
+        """登录页面"""
+        login_file = static_dir / "login.html"
+        if login_file.exists():
+            return FileResponse(login_file)
+        return RedirectResponse(url="/static/index.html", status_code=302)
+
+    @app.get("/app")
+    async def app_page():
+        """应用主页面"""
+        index_file = static_dir / "index.html"
+        if index_file.exists():
+            return FileResponse(index_file)
+        return RedirectResponse(url="/static/index.html", status_code=302)
 
 
 @app.get("/api/health")
@@ -1411,7 +1425,8 @@ async def get_stock_signals(code: str):
 @app.get("/api/ranking")
 async def get_ranking(
     rank_type: str = "change_pct",  # change_pct(涨跌幅), amount(成交额), turnover_rate(换手率)
-    top_n: int = 20
+    top_n: int = 20,
+    realtime: bool = False  # 是否使用实时数据
 ):
     """获取每日排行榜数据（使用tushare API）
 
@@ -1421,6 +1436,7 @@ async def get_ranking(
             - amount: 成交额排行
             - turnover_rate: 换手率排行
         top_n: 返回前N只股票
+        realtime: 是否使用实时数据（需要tushare积分>=2000）
     """
     try:
         import os
@@ -1434,89 +1450,179 @@ async def get_ranking(
         # 直接使用 token 初始化，避免写入缓存文件导致权限问题
         pro = ts.pro_api(token)
 
-        # 获取最新交易日
-        trade_cal = pro.trade_cal(exchange='SSE', start_date='20200101', end_date=datetime.now().strftime('%Y%m%d'))
-        trade_cal = trade_cal[trade_cal['is_open'] == 1]
-        if trade_cal.empty:
-            return {"stocks": [], "error": "无交易日数据"}
+        # 获取股票列表（用于实时数据）
+        stock_list = pro.stock_basic(exchange='', list_status='L', fields='ts_code,name')
+        if stock_list.empty:
+            return {"stocks": [], "error": "获取股票列表失败"}
 
-        latest_date = trade_cal['cal_date'].max()
+        # 过滤掉ST股票
+        stock_list = stock_list[~stock_list['name'].str.contains('ST|PT|退')]
 
-        # 获取日线行情数据（包含涨跌幅和成交额）
-        df = pro.daily(trade_date=latest_date)
-
-        # 获取换手率数据
-        df_basic = pro.daily_basic(trade_date=latest_date, fields='ts_code,turnover_rate')
-
-        if df.empty:
-            return {"stocks": [], "error": "暂无数据"}
-
-        # 合并数据
-        if not df_basic.empty:
-            df = df.merge(df_basic, on='ts_code', how='left')
-
-        # 过滤掉ST股票和退市股票
-        df = df[~df['ts_code'].str.contains('ST|PT')]
-
-        # 根据排行类型排序
-        if rank_type == "change_pct":
-            # 涨跌幅榜（排除涨幅为0的）
-            df = df[df['pct_chg'] != 0].sort_values('pct_chg', ascending=False)
-            rank_name = "涨跌幅榜"
-        elif rank_type == "amount":
-            # 成交额榜
-            df = df.sort_values('amount', ascending=False)
-            rank_name = "成交额榜"
-        elif rank_type == "turnover_rate":
-            # 换手率榜
-            df = df.sort_values('turnover_rate', ascending=False)
-            rank_name = "换手率榜"
+        if realtime:
+            # 使用实时数据
+            return await _get_realtime_ranking(pro, stock_list, rank_type, top_n)
         else:
-            return {"stocks": [], "error": "不支持的排行类型"}
-
-        # 取前N名
-        df = df.head(top_n)
-
-        # 获取股票名称
-        stock_names = {}
-        for ts_code in df['ts_code'].tolist():
-            code = ts_code.split('.')[0]
-            name = get_stock_name_by_code(code)
-            stock_names[ts_code] = name
-
-        # 构建返回数据
-        stocks = []
-        for _, row in df.iterrows():
-            ts_code = row['ts_code']
-            code = ts_code.split('.')[0]
-            pct_chg = row.get('pct_chg', 0)
-            turnover = row.get('turnover_rate')
-
-            stocks.append({
-                "code": code,
-                "name": stock_names.get(ts_code, ''),
-                "close": row['close'],
-                "change_pct": pct_chg / 100 if pd.notna(pct_chg) else 0,  # 转换为小数
-                "turnover_rate": turnover if pd.notna(turnover) else 0,
-                "volume": row['vol'],
-                "amount": row['amount']
-            })
-
-        # 格式化日期
-        date_str = f"{latest_date[:4]}-{latest_date[4:6]}-{latest_date[6:]}"
-
-        return {
-            "rank_type": rank_type,
-            "rank_name": rank_name,
-            "date": date_str,
-            "stocks": stocks
-        }
+            # 使用历史日线数据
+            return await _get_daily_ranking(pro, rank_type, top_n)
 
     except Exception as e:
         print(f"获取排行榜失败: {e}")
         import traceback
         traceback.print_exc()
         return {"stocks": [], "error": str(e)}
+
+
+async def _get_realtime_ranking(pro, stock_list, rank_type: str, top_n: int):
+    """获取实时排行榜数据（使用tushare realtime_list接口）"""
+    from datetime import datetime
+    import tushare as ts
+    import pandas as pd
+
+    try:
+        # 调用 tushare realtime_list 接口
+        # src='dc' 表示从数据中心获取
+        df_rt = ts.realtime_list(src='dc')
+
+        if df_rt is None or df_rt.empty:
+            return {"stocks": [], "error": "获取实时数据失败"}
+
+        # 根据排行类型排序
+        if rank_type == "change_pct":
+            df_rt = df_rt.sort_values('pct_change', ascending=False)
+            rank_name = "涨跌幅榜(实时)"
+        elif rank_type == "amount":
+            df_rt = df_rt.sort_values('amount', ascending=False)
+            rank_name = "成交额榜(实时)"
+        elif rank_type == "turnover_rate":
+            df_rt = df_rt.sort_values('turnover_rate', ascending=False)
+            rank_name = "换手率榜(实时)"
+        else:
+            return {"stocks": [], "error": "不支持的排行类型"}
+
+        # 取前N名
+        df_rt = df_rt.head(top_n)
+
+        # 过滤掉ST股票
+        df_rt = df_rt[~df_rt['name'].str.contains('ST|PT|退', na=False)]
+
+        # 构建返回数据
+        stocks = []
+        for _, row in df_rt.iterrows():
+            ts_code = row['ts_code']
+            code = ts_code.split('.')[0]
+            pct_change = row.get('pct_change', 0)
+
+            stocks.append({
+                "code": code,
+                "name": row.get('name', ''),
+                "close": row.get('price', 0),
+                "change_pct": pct_change / 100 if pd.notna(pct_change) else 0,
+                "turnover_rate": row.get('turnover_rate', 0),
+                "volume": row.get('volume', 0),
+                "amount": row.get('amount', 0)
+            })
+
+        now = datetime.now()
+        time_str = now.strftime("%Y-%m-%d %H:%M:%S")
+
+        return {
+            "rank_type": rank_type,
+            "rank_name": rank_name,
+            "date": time_str,
+            "realtime": True,
+            "stocks": stocks
+        }
+
+    except Exception as e:
+        print(f"获取实时排行榜失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"stocks": [], "error": f"获取实时数据失败: {str(e)}"}
+
+
+async def _get_daily_ranking(pro, rank_type: str, top_n: int):
+    """获取历史日线排行榜数据"""
+    from datetime import datetime
+    import pandas as pd
+
+    # 获取最新交易日
+    trade_cal = pro.trade_cal(exchange='SSE', start_date='20200101', end_date=datetime.now().strftime('%Y%m%d'))
+    trade_cal = trade_cal[trade_cal['is_open'] == 1]
+    if trade_cal.empty:
+        return {"stocks": [], "error": "无交易日数据"}
+
+    latest_date = trade_cal['cal_date'].max()
+
+    # 获取日线行情数据（包含涨跌幅和成交额）
+    df = pro.daily(trade_date=latest_date)
+
+    # 获取换手率数据
+    df_basic = pro.daily_basic(trade_date=latest_date, fields='ts_code,turnover_rate')
+
+    if df.empty:
+        return {"stocks": [], "error": "暂无数据"}
+
+    # 合并数据
+    if not df_basic.empty:
+        df = df.merge(df_basic, on='ts_code', how='left')
+
+    # 过滤掉ST股票和退市股票
+    df = df[~df['ts_code'].str.contains('ST|PT')]
+
+    # 根据排行类型排序
+    if rank_type == "change_pct":
+        # 涨跌幅榜（排除涨幅为0的）
+        df = df[df['pct_chg'] != 0].sort_values('pct_chg', ascending=False)
+        rank_name = "涨跌幅榜"
+    elif rank_type == "amount":
+        # 成交额榜
+        df = df.sort_values('amount', ascending=False)
+        rank_name = "成交额榜"
+    elif rank_type == "turnover_rate":
+        # 换手率榜
+        df = df.sort_values('turnover_rate', ascending=False)
+        rank_name = "换手率榜"
+    else:
+        return {"stocks": [], "error": "不支持的排行类型"}
+
+    # 取前N名
+    df = df.head(top_n)
+
+    # 获取股票名称
+    stock_names = {}
+    for ts_code in df['ts_code'].tolist():
+        code = ts_code.split('.')[0]
+        name = get_stock_name_by_code(code)
+        stock_names[ts_code] = name
+
+    # 构建返回数据
+    stocks = []
+    for _, row in df.iterrows():
+        ts_code = row['ts_code']
+        code = ts_code.split('.')[0]
+        pct_chg = row.get('pct_chg', 0)
+        turnover = row.get('turnover_rate')
+
+        stocks.append({
+            "code": code,
+            "name": stock_names.get(ts_code, ''),
+            "close": row['close'],
+            "change_pct": pct_chg / 100 if pd.notna(pct_chg) else 0,  # 转换为小数
+            "turnover_rate": turnover if pd.notna(turnover) else 0,
+            "volume": row['vol'],
+            "amount": row['amount']
+        })
+
+    # 格式化日期
+    date_str = f"{latest_date[:4]}-{latest_date[4:6]}-{latest_date[6:]}"
+
+    return {
+        "rank_type": rank_type,
+        "rank_name": rank_name,
+        "date": date_str,
+        "realtime": False,
+        "stocks": stocks
+    }
 
 
 def get_stock_name_by_code(code: str) -> str:
