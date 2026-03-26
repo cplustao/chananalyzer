@@ -90,8 +90,8 @@
   function checkLoggedIn(force = false) {
     const token = localStorage.getItem(STORAGE_KEY);
     if (token && !force) {
-      // 已登录，跳转到首页
-      window.location.href = '/static/index.html';
+      // 已登录，跳转到应用主页
+      window.location.href = '/app';
       return true;
     }
     return false;
@@ -157,8 +157,8 @@
       btnText.textContent = '登录成功！';
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      // 跳转到首页
-      window.location.href = '/static/index.html';
+      // 跳转到应用主页
+      window.location.href = '/app';
 
     } catch (error) {
       console.error('登录失败:', error);

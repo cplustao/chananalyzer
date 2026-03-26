@@ -1902,7 +1902,7 @@
         const token = localStorage.getItem('chanalyzer_token');
         if (!token) {
           // 未登录，跳转到登录页
-          window.location.href = '/static/login.html';
+          window.location.href = '/';
           return false;
         }
         return true;
@@ -1955,7 +1955,7 @@
       logout() {
         localStorage.removeItem('chanalyzer_token');
         localStorage.removeItem('chanalyzer_user_id');
-        window.location.href = '/static/login.html';
+        window.location.href = '/';
       },
 
       // 获取认证头
@@ -1991,7 +1991,7 @@
             localStorage.removeItem('chanalyzer_token');
             localStorage.removeItem('chanalyzer_user_id');
             // 跳转到登录页
-            window.location.href = '/static/login.html';
+            window.location.href = '/';
           }
         });
       }

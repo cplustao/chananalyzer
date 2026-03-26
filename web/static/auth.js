@@ -46,9 +46,9 @@ const AuthManager = {
      * 跳转到登录页
      */
     redirectToLogin() {
-        // 如果当前不在登录页面，跳转到登录页
-        if (!currentPath.includes('login.html')) {
-            window.location.href = '/static/login.html';
+        // 如果当前不在登录页面，跳转到根路径（登录页）
+        if (currentPath !== '/' && currentPath !== '/app') {
+            window.location.href = '/';
         }
     },
 
@@ -57,7 +57,7 @@ const AuthManager = {
      */
     logout() {
         this.clear();
-        window.location.href = '/static/login.html';
+        window.location.href = '/';
     },
 
     /**
