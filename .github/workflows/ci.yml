@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m ruff check backend migrations tests
+      - run: >-
+          python -m mypy --ignore-missing-imports --follow-imports=silent
+          backend/app/core backend/app/services/data_health.py
+          backend/app/services/structured_ai.py backend/app/repositories/jobs.py
+      - run: python -m pytest
+        env:
+          ENVIRONMENT: test
+          DATABASE_URL: sqlite:///data/ci.db
+      - run: python -m alembic upgrade head
+        env:
+          ENVIRONMENT: test
+          DATABASE_URL: sqlite:///data/ci-migrations.db
+      - run: python -m alembic check
+        env:
+          ENVIRONMENT: test
+          DATABASE_URL: sqlite:///data/ci-migrations.db
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run lint
+        working-directory: frontend
+      - run: npm test
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npm run check:budget
+        working-directory: frontend
+      - name: Check generated API contract
+        run: |
+          python -m pip install -e ..
+          python -m backend.app.export_openapi
+          npm run generate:api
+          git diff --exit-code -- openapi.json src/types/openapi.d.ts
+        working-directory: frontend
+
+  e2e:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project: [desktop-chromium, mobile-chromium]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npm run test:e2e -- --project=${{ matrix.project }}
+        working-directory: frontend

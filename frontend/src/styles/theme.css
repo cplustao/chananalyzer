@@ -1,0 +1,4 @@
+:root {
+  --muted-foreground: oklch(.70 .03 252);
+  --focus-outline: #7cc4ff;
+}

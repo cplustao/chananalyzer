@@ -1,0 +1,58 @@
+{
+  "range": {
+    "begin": "2025-07-01",
+    "end": "2026-07-24"
+  },
+  "samples": {
+    "600958": {
+      "kline_count": 183,
+      "bi_count": 11,
+      "seg_count": 2,
+      "zs_count": 2,
+      "bsp_count": 4,
+      "last_bi": {
+        "idx": 10,
+        "dir": "up",
+        "start_date": "2026/07/14",
+        "end_date": "2026/07/21",
+        "start_price": 8.76372224,
+        "end_price": 9.2
+      },
+      "last_seg": {
+        "idx": 1,
+        "dir": "down",
+        "start_date": "2025/08/18",
+        "end_date": "2026/07/14"
+      },
+      "last_zs": {
+        "idx": 6,
+        "start_date": "2026/04/07",
+        "end_date": "2026/06/23",
+        "low": 8.85,
+        "high": 9.71247342
+      }
+    },
+    "000001": {
+      "kline_count": 187,
+      "bi_count": 14,
+      "seg_count": 6,
+      "zs_count": 0,
+      "bsp_count": 9,
+      "last_bi": {
+        "idx": 13,
+        "dir": "up",
+        "start_date": "2026/07/01",
+        "end_date": "2026/07/24",
+        "start_price": 9.99,
+        "end_price": 11.18
+      },
+      "last_seg": {
+        "idx": 5,
+        "dir": "up",
+        "start_date": "2026/07/01",
+        "end_date": "2026/07/24"
+      },
+      "last_zs": null
+    }
+  }
+}

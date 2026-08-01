@@ -1,0 +1,32 @@
+.editable-watchlist-cell {
+  min-width: 130px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 5px 7px;
+  margin: 2px -7px;
+  border: 1px dashed transparent;
+  border-radius: 5px;
+  outline: none;
+  white-space: normal;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.editable-watchlist-cell:hover {
+  border-color: #61404a;
+  background: rgba(190, 45, 57, 0.08);
+}
+
+.editable-watchlist-cell:focus-visible {
+  border-color: #d34b57;
+  background: rgba(190, 45, 57, 0.12);
+  box-shadow: 0 0 0 2px rgba(211, 75, 87, 0.18);
+}
+
+.field-help {
+  display: block;
+  margin-top: 7px;
+  color: #6d7a8d;
+  font-size: 11px;
+  line-height: 1.65;
+}

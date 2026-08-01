@@ -1,715 +1,108 @@
-# ChanAnalyzer - A股缠论分析系统
+# ChanAnalyzer v2
 
-> 本项目基于 [Vespa314/chan.py](https://github.com/Vespa314/chan.py) 进行二次开发
+ChanAnalyzer v2 是面向个人研究、可部署到单台服务器的 A 股缠论研究工作台。当前主工程已经完成 v2 收敛：React 前端、FastAPI API、独立 Worker、SQLAlchemy/Alembic 数据库，以及不访问数据库和网络的纯缠论核心。
 
-**原项目链接**: https://github.com/Vespa314/chan.py | **本项目仓库**: https://github.com/164149043/chananalyzer
+## 当前架构
 
----
-
-## 二次开发内容
-
-基于原始 chan.py 项目，本版本进行了以下增强和改进：
-
-- 🤖 **AI 智能分析模块** - 集成多个 AI 模型进行协作分析
-- 📡 **多数据源支持** - 支持 Tushare、Akshare 等多种数据源
-- 🌐 **FastAPI Web 界面** - 现代化的 Web 分析平台
-- ⚡ **缓存优化** - 数据库缓存提升分析速度
-- 📊 **可视化增强** - 改进的图表和交互体验
-
----
-
-基于缠论（缠中说禅）技术分析的 A 股行情分析工具，支持笔、线段、中枢、买卖点自动识别。**仅支持日线级别分析**。
-
-## 特性
-
-- **缠论核心分析**：自动识别笔、线段、中枢结构
-- **多买卖点检测**：支持一/二/三类买卖点识别
-- **日线分析**：专注日线级别，5年历史数据
-- **技术指标**：MACD、量价分析
-- **本地缓存**：SQLite 本地缓存，离线快速分析
-- **批量扫描**：一键扫描全市场买卖点信号
-- **AI 智能分析**：多 AI 协作分析，给出交易策略建议
-- **Web 界面**：基于浏览器的一站式分析平台
-
-## 快速开始
-
-### 方式一：Web 界面（推荐）
-
-```bash
-# 启动 Web 服务器
-python web/start_server.py
-
-# 或直接启动 API
-cd web && python api.py
+```text
+React + TypeScript + Vite
+          |
+      /api/v1 + SSE
+          |
+FastAPI -> Services -> Repositories -> SQLAlchemy -> SQLite / PostgreSQL
+             |              |
+             |              +-> Tushare / AI Providers
+             +-> Worker -> 纯缠论核心
 ```
 
-然后访问：**http://localhost:8000**
+- `backend/app/api`：鉴权、参数校验、序列化和健康检查。
+- `backend/app/services`：市场雷达、个股、扫描、涨停、新股、行情同步和任务编排。
+- `backend/app/repositories`：数据库访问边界。
+- `backend/app/providers`：Tushare 与 OpenAI 兼容 AI 服务。
+- `backend/app/chan_core`：内存算法接口；上游算法固定在 `vendor`，禁止网络和数据库访问。
+- `backend/app/worker`：持久化后台任务、重试、取消和恢复。
+- `frontend`：统一深色研究终端、左侧导航、任务中心和帮助中心。
+- `migrations`：Alembic 数据库结构迁移。
 
-Web 功能包括：
-- 📊 **仪表盘** - 市场概况、买卖点统计、热门板块
-- 📈 **个股分析** - 输入股票代码，多 AI 协作分析
-- ⚡ **买点扫描** - 一买、二买、三买批量扫描
-- 💰 **卖点扫描** - 二卖批量扫描
-- 📊 **智能筛选** - 行业/地区筛选
-- 🔥 **热门扫描** - 涨幅/跌幅/成交额/成交量/换手率/龙虎榜
+## 功能
 
-### 方式二：命令行
+- 市场雷达：市场结论、证据/反证、仓位曲线和历史版本。
+- 个股研究：自选研究队列、标签筛选、K 线、笔/线段/中枢/买卖点/背离和分析历史。
+- 市场筛选：热门榜单与按条件组合的智能筛选。
+- 缠论扫描：买点、卖点和持久化扫描结果。
+- 涨停与新股分析：日期区间、批量任务、评分和版本化 AI 报告。
+- 自选股：列表内双击编辑标签与研究备注，并与个股研究队列联动。
+- 设置与帮助：中文配置、Secret 脱敏、数据源测试和页面级帮助。
 
-#### 1. 安装依赖
+## 本地启动
 
-```bash
-pip install -r requirements.txt
+要求 Python 3.11+、Node.js 20+。
+
+```powershell
+py -3.12 -m pip install -e ".[dev]"
+cd frontend
+npm install
+npm run build
+cd ..
+py -3.12 -m backend.app.start_local
 ```
 
-#### 2. 配置 Token
+访问 `http://127.0.0.1:8011`。本地默认 `AUTH_MODE=local`，只接受本机访问且无需登录。API 与 Worker 是两个独立进程；`start_local` 仅负责同时管理它们。
 
-```bash
-# Windows PowerShell
-$env:TUSHARE_TOKEN="你的token"
+也可以分别启动：
 
-# Linux/Mac
-export TUSHARE_TOKEN="你的token"
+```powershell
+py -3.12 -m backend.app.main
+py -3.12 -m backend.app.worker.main
 ```
 
-> 获取 Token：访问 [Tushare Pro](https://tushare.pro) 注册并获取 API Token
+## 配置
 
-#### 2.5 配置 AI API（可选）
+复制 `.env.example` 为 `.env`。常用项：
 
-如需使用 AI 智能分析功能，配置 DeepSeek API Key：
-
-```bash
-# Windows PowerShell
-$env:DEEPSEEK_API_KEY="your_deepseek_key"
-
-# Linux/Mac
-export DEEPSEEK_API_KEY="your_deepseek_key"
+```dotenv
+AUTH_MODE=local
+DATABASE_URL=sqlite:///D:/path/to/chananalyzer/data/chan_v2.db
+API_HOST=127.0.0.1
+API_PORT=8011
+APP_SECRET_KEY=replace-with-a-stable-random-secret
 ```
 
-> 获取 API Key：访问 [DeepSeek Platform](https://platform.deepseek.com/api_keys) 注册并获取 API Key
+Tushare、DeepSeek 和 SiliconFlow 密钥可在设置页写入；接口只返回是否已配置，不返回明文。当前行情刷新依赖有效的 Tushare Token。
 
-#### 3. 运行分析
+## 数据库与迁移
 
-```python
-from ChanAnalyzer import ChanAnalyzer
+新安装先执行：
 
-analyzer = ChanAnalyzer(code="000001")
-print(analyzer.get_summary())
+```powershell
+py -3.12 -m alembic upgrade head
 ```
 
----
+## 开发与验证
 
-## 命令行使用
-
-### 扫描器选择
-
-系统提供两种扫描器，可根据需求选择：
-
-| 扫描器 | 数据源 | 速度 | 功能 | 适用场景 |
-|--------|--------|------|------|----------|
-| `scan_stocks_cache.py` | 本地数据库 + Tushare | **快** | 买卖点+行业/地区+资金流向 | **推荐日常使用** |
-| `scan_stocks.py` | Tushare API | 慢 | 全功能 | 需要实时数据 |
-
-### 本地缓存扫描器（推荐）
-
-使用本地 `chan.db` 进行 K 线分析，速度快无需联网（可选获取行业/资金流向）。
-
-```bash
-# 扫描所有股票（从本地数据库）
-python scan_stocks_cache.py
-
-# 扫描指定股票
-python scan_stocks_cache.py --codes 000001 000002 600000
-
-# 按行业筛选
-python scan_stocks_cache.py --industry 电子 计算机
-
-# 按地区筛选
-python scan_stocks_cache.py --area 深圳 上海
-
-# 排除ST股票
-python scan_stocks_cache.py --exclude-st
-
-# 显示资金流向并排序
-python scan_stocks_cache.py --show-money-flow --sort-by-money-flow
-
-# 筛选特定买点
-python scan_stocks_cache.py --buy 1 2 3a
-
-# 保存结果
-python scan_stocks_cache.py --output results.txt
-
-# 按行业分组显示
-python scan_stocks_cache.py --group-by industry
-
-# 组合使用：电子行业 + 二买三买 + 主力流入
-python scan_stocks_cache.py --industry 电子 --buy 2 3a 3b --min-money-flow 500 --sort-by-money-flow
+```powershell
+py -3.12 -m pytest
+py -3.12 -m ruff check backend migrations tests
+py -3.12 -m mypy --ignore-missing-imports --follow-imports=silent backend/app/core/errors.py backend/app/core/exception_handlers.py backend/app/services/backups.py backend/app/services/structured_ai.py backend/app/services/scan_changes.py backend/app/services/data_health.py backend/app/db/migrations.py backend/app/start_local.py
+py -3.12 -m backend.app.export_openapi
+cd frontend
+npm run generate:api
+npm test
+npm run lint
+npm run build
+npm run test:e2e
 ```
 
-### 首次使用完整流程
+依赖以 `pyproject.toml` 为准；`requirements.txt` 用于服务器直接安装，`pylock.toml` 用于严格复现。本项目不会在未授权时运行 `npm audit`，因为该命令会把依赖元数据发送给 npm。
 
-```bash
-# 1. 同步股票基本信息（名称、行业、地区）- 首次使用必做
-python -m scripts.cache_stock_info
+## 部署
 
-# 2. 缓存日线数据（5年）
-python -m scripts.cache_all_stocks --all --kl-types DAY --begin 2021-04-01 --delay 0.3
+单服务器模式由 Nginx 提供 HTTPS，并用 systemd、Supervisor 或宝塔分别守护 API 与 Worker。服务器使用 `AUTH_MODE=admin`、Secure HttpOnly Cookie、固定 `APP_SECRET_KEY` 和明确的 `ALLOWED_ORIGINS`。详见 `docs/DEPLOYMENT_V2.md`。
 
-# 3. 测试扫描
-python scan_stocks_cache.py --codes 000001 000002 600000
-```
+## 旧系统清理
 
-### 分析单只股票
+v1 源码、虚拟环境、日志、旧数据库、8001 入口及一次性旧库导入器均已永久删除。主工程只保留 v2，历史结构升级统一由 Alembic 管理。
 
-```bash
-# 查看文本摘要
-python -c "
-from ChanAnalyzer import ChanAnalyzer
-analyzer = ChanAnalyzer(code='000001')
-print(analyzer.get_summary())
-"
-```
+## 风险提示
 
-### AI 智能分析
-
-系统提供两种 AI 分析模式：
-
-#### 单 AI 分析
-
-```bash
-# 交互模式
-python -m scripts.ai_analyze
-
-# 命令行模式
-python -m scripts.ai_analyze --code 000001
-
-# 保存结果
-python -m scripts.ai_analyze --code 000001 --output report.txt
-```
-
-#### 多 AI 协作分析（推荐）
-
-两个分析师 AI 并行分析 + 一个决策者 AI 综合判断：
-
-```bash
-# 基本用法
-python -m scripts.multi_ai_analyze --code 000001
-
-# 使用自定义配置
-python -m scripts.multi_ai_analyze --code 000001 --config my_config.yaml
-
-# 保存结果
-python -m scripts.multi_ai_analyze --code 000001 --output report.txt
-```
-
-**多 AI 分析流程**：
-```
-缠论数据 + 资金流向 + 盘中实时行情
-    → [分析师A + 分析师B] 并行分析 → 决策者综合 → 最终建议
-```
-
-**配置文件** (`ai_config.yaml`)：
-
-```yaml
-# AI服务提供商
-provider:
-  name: siliconflow                    # 支持 deepseek / siliconflow
-  api_key_env: SILICONFLOW_API_KEY
-  base_url: https://api.siliconflow.cn/v1
-
-# 分析师配置
-analysts:
-  count: 2
-  models:
-    - Pro/deepseek-ai/DeepSeek-V3.2    # 分析师A
-    - Pro/deepseek-ai/DeepSeek-R1      # 分析师B
-  temperatures: [0.3, 0.6]             # A偏保守，B偏激进
-  max_tokens: 1500
-
-# 决策者配置
-decision_maker:
-  model: Pro/MiniMaxAI/MiniMax-M2.5
-  temperature: 0.3
-  max_tokens: 1500
-```
-
-### Web 界面
-
-基于浏览器的现代化分析平台。
-
-#### 启动 Web 服务
-
-```bash
-# 方式1：使用启动脚本（推荐）
-python web/start_server.py
-
-# 方式2：直接运行 API
-cd web && python api.py
-
-# 局域网访问
-python -m uvicorn web.api:app --host 0.0.0.0
-```
-
-然后访问：**http://localhost:8000**
-
-#### 功能模块
-
-| 模块 | 功能 | 说明 |
-|------|------|------|
-| 📊 仪表盘 | 市场概览 | 指数概览、买卖点统计、热门板块、买点推荐 |
-| 📈 个股分析 | AI 分析 + K线图 | 双分析师 + 决策者模式，支持温度调节；K线图展示缠论标记 |
-| ⚡ 买点扫描 | 批量扫描 | 一买、一买衍生、二买、三买 A/B |
-| 💰 卖点扫描 | 批量扫描 | 一卖、二卖、三卖 A/B |
-| 📊 智能筛选 | 行业/地区筛选 | 按行业和地区筛选股票 |
-| 🔥 热门扫描 | 热门股票扫描 | 涨幅/跌幅/成交额/成交量/换手率/龙虎榜排名 |
-| 📚 缠论说明 | 理论学习 | 缠论核心概念、买卖点类型、操作原则 |
-
-#### K线图功能
-
-个股分析页面支持交互式K线图，基于 ECharts 渲染，展示以下缠论标记：
-
-| 标记 | 颜色 | 说明 |
-|------|------|------|
-| 笔 | 黄色实线/虚线 | 确认笔为实线，待定笔为虚线 |
-| 线段 | 蓝色粗线 | 确认线段为实线，待定线段为虚线 |
-| 中枢 | 橙色半透明区域 | 显示中枢区间和编号 |
-| 买卖点 | 红色三角(买)/绿色倒三角(卖) | 标记一二三类买卖点位置 |
-| 分型 | 紫色菱形 | 标记顶分型和底分型位置 |
-| 背离 | 红色虚线连接 | 检测顶背离和底背离 |
-| MACD | 副图指标 | DIF/DEA/MACD柱状图 |
-
-所有标记均可通过图表下方的切换按钮独立开关。支持鼠标滚轮缩放和拖拽浏览。
-
-#### Web API 端点
-
-```bash
-# 买卖点扫描 API
-POST /api/scan/buy/start    # 启动买点扫描
-POST /api/scan/sell/start   # 启动卖点扫描
-GET  /api/scan/buy/status   # 获取买点扫描状态
-GET  /api/scan/sell/status  # 获取卖点扫描状态
-GET  /api/scan/buy/results  # 获取买点扫描结果
-GET  /api/scan/sell/results # 获取卖点扫描结果
-
-# 个股分析 API
-POST /api/stock/analyze        # AI 分析股票（SSE 流式）
-GET  /api/stock/{code}/kline   # 获取K线数据 + 缠论标记
-GET  /api/stock/{code}/signals # 获取买卖点信号摘要
-GET  /api/stock/list           # 获取股票列表
-GET  /api/stock/hot            # 获取热门股票
-
-# 筛选和排行 API
-GET  /api/industries         # 获取行业列表及股票数量
-GET  /api/areas              # 获取地区列表及股票数量
-POST /api/scan/hot/start     # 启动热门股票扫描
-
-# 用户认证 API
-GET  /api/auth/session       # 获取/创建用户会话
-POST /api/auth/refresh       # 刷新用户会话
-POST /api/auth/login         # 用户登录
-```
-
-### 数据缓存管理
-
-#### 首次批量缓存
-
-```bash
-# 缓存5年日线数据（推荐）
-python -m scripts.cache_all_stocks --all --kl-types DAY --begin 2021-04-01 --delay 0.3
-
-# 测试：先缓存 100 只股票
-python -m scripts.cache_all_stocks --all --kl-types DAY --begin 2021-04-01 --limit 100 --delay 0.3
-
-# 缓存指定股票
-python -m scripts.cache_all_stocks --codes 000001 000002 --kl-types DAY
-```
-
-**参数说明**：
-- `--kl-types DAY` - 缓存日线（推荐：约 5000 次调用）
-- `--begin 2021-04-01` - 从5年前开始获取
-- `--delay 0.3` - 每股间隔 0.3 秒，避免触发频次限制
-- `--limit 100` - 限制数量，测试用
-
-#### 日常更新数据
-
-```bash
-# 更新所有已缓存的股票（每日收盘后执行）
-python -m scripts.update_data --all
-
-# 更新指定股票
-python -m scripts.update_data --codes 000001 000002
-
-# 清除缓存后重新获取
-python -m scripts.update_data --codes 000001 --refresh
-```
-
----
-
-## 项目结构
-
-```
-chananalyzer/
-├── ChanAnalyzer/           # 分析模块
-│   ├── analyzer.py         # 核心分析器（仅日线）
-│   ├── ai_analyzer.py      # AI分析器
-│   ├── multi_ai_analyzer.py # 多AI协作分析器
-│   ├── stock_pool.py       # 股票池管理（筛选/随机采样）
-│   ├── hot_stocks.py       # 热门股票获取（涨幅/跌幅/成交额/成交量/换手率/龙虎榜）
-│   ├── realtime_quote.py   # 盘中实时行情
-│   ├── sector_flow.py      # 个股/板块资金流向
-│   ├── prompts/            # AI提示词模板
-│   │   ├── analyst.py      # 分析师提示词
-│   │   └── decision_maker.py # 决策者提示词
-│   ├── database.py         # 数据库模型
-│   ├── data_manager.py     # 数据管理器
-│   └── formatter.py        # 格式化输出
-├── Common/                 # 公共模块
-│   ├── CEnum.py           # 枚举定义
-│   └── CTime.py           # 时间处理
-├── KLine/                  # K线处理
-├── Bi/                     # 笔
-├── Seg/                    # 线段
-├── Zs/                     # 中枢
-├── DataAPI/                # 数据源
-│   ├── TushareAPI.py      # Tushare 接口
-│   └── CacheDBAPI.py      # 本地数据库接口
-├── web/                    # Web界面
-│   ├── api.py             # FastAPI 后端
-│   ├── auth.py            # 用户认证
-│   ├── start_server.py    # 服务器启动脚本
-│   ├── static/            # 前端静态文件
-│   │   ├── index.html     # 单页应用主页面
-│   │   └── kline-chart.js # K线图渲染模块（ECharts缠论标记）
-│   └── cache/             # 扫描结果缓存
-├── scripts/                # 脚本工具
-│   ├── multi_ai_analyze.py # 多AI协作分析脚本
-│   ├── ai_analyze.py      # 单AI分析脚本
-│   ├── cache_all_stocks.py # 批量缓存K线数据
-│   ├── cache_stock_info.py # 缓存股票基本信息
-│   └── update_data.py     # 数据更新脚本
-├── scan_stocks.py         # 在线扫描器
-├── scan_stocks_cache.py   # 本地缓存扫描器（推荐）
-├── ai_config.yaml         # AI配置文件
-└── chan.db                # 本地K线缓存数据库
-```
-
----
-
-## 缓存机制
-
-系统使用 SQLite (`chan.db`) 存储历史 K 线数据，避免重复 API 调用：
-
-| 场景 | 首次运行 | 再次运行 |
-|------|----------|----------|
-| 000001 日线 | 0.25s | 0.01s |
-| 加速比 | - | **42.5x** |
-
-### 缓存策略
-
-- **存储位置**: `./chan.db`
-- **分析周期**: 仅日线(DAY)
-- **数据来源**: Tushare Pro API
-- **更新方式**: 使用 `cache_all_stocks.py` 或 `update_data.py`
-
-### Tushare 权限参考
-
-| 权限等级 | 每分钟频次 | 每日总量 | 适用场景 |
-|----------|------------|----------|----------|
-| 免费账户 | 200 次 | 10,000 次 | 测试、个人使用 |
-| 普通用户 | 500 次 | 100,000 次 | **推荐** |
-
-**API 调用估算**：
-- 缓存全市场日线5年：~5,000 次调用
-- 有缓存后扫描：**0 次**调用
-
----
-
-## 买卖点类型
-
-| 类型 | 代码 | 说明 | 方向 |
-|------|------|------|------|
-| 一买 | `1`, `1p` | 第一类买点及衍生 | 买入 |
-| 二买 | `2` | 第二类买点 | 买入 |
-| 三买A | `3a` | 第三类买点A型 | 买入 |
-| 三买B | `3b` | 第三类买点B型 | 买入 |
-| 二卖 | `2s` | 第二类卖点 | 卖出 |
-
-> **注意**：卖点类型 `2s` 表示类二卖点。一卖(`1`)、二卖(`2`)、三卖A(`3a`)、三卖B(`3b`) 均已支持。
-
-### 常用行业名称
-
-| 行业 | 说明 |
-|------|------|
-| 半导体 | 芯片行业 |
-| 元器件 | 电子元器件 |
-| 通信设备 | 通信设备制造 |
-| 软件 | 软件服务 |
-| 电气设备 | 电力设备 |
-
-> 查看完整行业列表：`python scan_stocks.py --list-industries`
-
----
-
-## 命令参数完整说明
-
-### scan_stocks_cache.py 参数（推荐）
-
-| 参数 | 说明 | 示例 |
-|------|------|------|
-| `--codes` | 指定股票代码 | `--codes 000001 000002` |
-| `--buy` | 筛选买入类型 | `--buy 2 3a 3b` |
-| `--sell` | 筛选卖出类型 | `--sell 2s` |
-| `--no-strict` | 关闭笔严格模式 | `--no-strict` |
-| `--industry` | 按行业筛选 | `--industry 电子 半导体` |
-| `--area` | 按地区筛选 | `--area 深圳 上海` |
-| `--exclude-st` | 排除ST股票 | `--exclude-st` |
-| `--group-by` | 按行业/地区分组 | `--group-by industry` |
-| `--show-money-flow` | 显示个股资金流向 | `--show-money-flow` |
-| `--sort-by-money-flow` | 按主力净流入排序 | `--sort-by-money-flow` |
-| `--min-money-flow` | 最小主力净流入（万元） | `--min-money-flow 1000` |
-| `--output` | 保存结果到文件 | `--output results.txt` |
-
-### cache_all_stocks.py 参数
-
-| 参数 | 说明 | 示例 |
-|------|------|------|
-| `--all` | 缓存所有A股 | `--all` |
-| `--codes` | 指定股票代码 | `--codes 000001` |
-| `--limit` | 限制数量 | `--limit 100` |
-| `--kl-types` | K线周期类型 | `--kl-types DAY` |
-| `--begin` | 开始日期（默认2023-01-01） | `--begin 2021-04-01` |
-| `--delay` | 请求延迟（秒） | `--delay 0.3` |
-
-### update_data.py 参数
-
-| 参数 | 说明 | 示例 |
-|------|------|------|
-| `--all` | 更新所有已缓存股票 | `--all` |
-| `--codes` | 指定股票代码 | `--codes 000001` |
-| `--kl-types` | K线周期类型 | `--kl-types DAY` |
-| `--refresh` | 清除缓存后重新获取 | `--refresh` |
-| `--verbose` | 显示详细日志 | `--verbose` |
-
----
-
-## API 示例
-
-### 日线分析
-
-```python
-from ChanAnalyzer import ChanAnalyzer
-
-analyzer = ChanAnalyzer(code="000001")
-
-# 获取文本报告
-summary = analyzer.get_summary()
-
-# 获取结构化数据
-data = analyzer.get_analysis()
-
-# 获取买卖点
-bs_points = analyzer.get_bs_points()
-for bs in bs_points:
-    direction = "买入" if bs['is_buy'] else "卖出"
-    print(f"{bs['type']}类{direction}: {bs['date']} @ {bs['price']:.2f}")
-```
-
-### AI 分析
-
-```python
-from ChanAnalyzer import ChanAnalyzer, AIAnalyzer, MultiAIAnalyzer
-from ChanAnalyzer.sector_flow import get_stock_money_flow
-from ChanAnalyzer.realtime_quote import get_realtime_quote
-
-# 获取缠论数据
-analyzer = ChanAnalyzer(code="000001")
-analysis = analyzer.get_analysis()
-
-# 获取资金流向
-money_flow = get_stock_money_flow("000001", days=5)
-
-# 获取盘中实时行情（非交易时段返回None）
-realtime_quote = get_realtime_quote("000001")
-
-# 单 AI 分析
-ai = AIAnalyzer(provider="deepseek")
-result = ai.analyze(analysis, money_flow=money_flow, realtime_quote=realtime_quote)
-print(result)
-
-# 多 AI 协作分析（推荐）
-multi_ai = MultiAIAnalyzer()
-result = multi_ai.analyze(analysis, money_flow=money_flow, realtime_quote=realtime_quote)
-print(result.decision)
-
-# 查看分析师意见
-for opinion in result.analyst_opinions:
-    print(f"{opinion.analyst_name}: {opinion.opinion}")
-```
-
----
-
-## 常见问题
-
-### Q: 首次使用应该执行哪些命令？
-
-```bash
-# 1. 配置 .env 文件（项目根目录）
-echo TUSHARE_TOKEN=你的token > .env
-
-# 2. 同步股票基本信息
-python -m scripts.cache_stock_info
-
-# 3. 缓存5年日线数据
-python -m scripts.cache_all_stocks --all --kl-types DAY --begin 2021-04-01 --delay 0.3
-
-# 4. 测试扫描
-python scan_stocks_cache.py --codes 000001 000002
-```
-
-### Q: 数据获取失败？
-
-**A**: 检查 Tushare Token 是否正确，免费账户有请求频率限制。
-
-### Q: 缓存存储在哪里？
-
-**A**:
-- K线数据：`./chan.db`
-- 股票信息：`~/.chan/cache/stock_info.json`
-- 实时行情：内存缓存（60秒过期），非交易时段不缓存
-
-### Q: 如何更新所有股票数据？
-
-```bash
-python -m scripts.update_data --all
-```
-
-### Q: 板块资金流向无法获取？
-
-**A**: 申万行业指数接口需要一定权限，可以：
-1. 升级 Tushare 账户权限
-2. 或者忽略该功能，直接使用行业筛选
-
-### Q: 个股资金流向需要什么权限？
-
-**A**: 个股资金流向使用 `moneyflow` 接口，需要 **2000 积分**权限。
-- 主力资金 = 特大单 + 大单（机构资金流向）
-- 散户资金 = 中单 + 小单
-- 数据缓存 10 分钟，避免频繁调用
-
-### Q: 扫描结果为什么是 0？
-
-**A**: 可能原因：
-1. 未缓存 K 线数据 - 先运行 `python -m scripts.cache_all_stocks --all --kl-types DAY --begin 2021-04-01`
-2. 筛选条件过于严格 - 尝试减少选择的买卖点类型
-3. 数据库路径问题 - 确保 `chan.db` 在项目根目录
-
-### Q: 扫描结果显示的股票名称和代码一样？
-
-**A**: 需要先同步股票基本信息：
-
-```bash
-python -m scripts.cache_stock_info
-```
-
-### Q: AI 分析功能如何使用？
-
-**A**:
-```bash
-# 单 AI 分析
-python -m scripts.ai_analyze --code 000001
-
-# 多 AI 协作分析（推荐）
-python -m scripts.multi_ai_analyze --code 000001
-```
-
-需要设置对应的环境变量（如 `DEEPSEEK_API_KEY` 或 `SILICONFLOW_API_KEY`），具体查看 `ai_config.yaml` 配置。
-
-### Q: 多 AI 协作分析有什么优势？
-
-**A**:
-- 两个分析师 AI 使用不同温度并行分析，获得多样化观点
-- 盘中自动注入实时行情，盘后使用收盘价
-- 决策者 AI 综合分析师意见做出最终决策
-- 比单 AI 分析更全面、更可靠
-
-### Q: 买卖点扫描是随机还是顺序的？
-
-**A**: 扫描采用**随机采样**模式，每次扫描从全市场中随机选取指定数量的股票，避免每次都扫同一批股票。
-
-### Q: 热门扫描支持哪些类型？
-
-**A**: 支持6种热门股票排名：
-- 涨幅前100 / 跌幅前100 — 按当日涨跌幅排名
-- 成交额前100 / 成交量前100 — 按资金参与度排名
-- 换手率前100 — 按交易活跃度排名
-- 龙虎榜 — 当日上榜股票
-
----
-
-### Q: 局域网如何访问？
-
-```bash
-python -m uvicorn web.api:app --host 0.0.0.0
-# 或
-python web/start_server.py --host 0.0.0.0
-```
-
----
-
-## 依赖项
-
-### 核心依赖
-
-```
-python>=3.9
-tushare>=1.2.60
-pandas>=2.0.0,<3.0.0
-numpy>=1.24.0
-sqlalchemy>=2.0.0
-```
-
-### Web 界面
-
-```
-fastapi>=0.104.0
-uvicorn>=0.24.0
-pydantic>=2.0.0
-python-multipart>=0.0.6
-```
-
-### AI 分析（可选）
-
-```
-openai>=1.0.0   # OpenAI 兼容 API 客户端
-pyyaml>=6.0.0   # YAML 配置文件解析
-```
-
-### 安装命令
-
-```bash
-# 安装全部依赖
-pip install -r requirements.txt
-
-# 仅安装核心依赖
-pip install tushare pandas numpy sqlalchemy
-
-# 安装Web界面依赖
-pip install fastapi uvicorn pydantic python-multipart
-
-# 安装AI分析依赖
-pip install openai pyyaml
-```
-
----
-
-## 许可证
-
-MIT License
-
----
-
-## 参考
-
-- [chan.py](https://github.com/Vespa314/chan.py) - 缠论
-- [Tushare Pro](https://tushare.pro) - 数据接口
-- [DeepSeek Platform](https://platform.deepseek.com) - AI API
-- [Web 文档](http://localhost:8000/docs) - Web API 文档（启动服务后访问）
+所有结论仅用于研究与软件验证，不构成投资建议。缠论结构、评分和 AI 报告都应结合数据质量、市场环境和个人风险承受能力独立判断。

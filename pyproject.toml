@@ -1,0 +1,65 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "chananalyzer-v2"
+version = "2.0.0"
+description = "Personal-first A-share Chan theory research workstation"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.109,<1",
+  "uvicorn[standard]>=0.27,<1",
+  "sqlalchemy>=2.0,<3",
+  "alembic>=1.13,<2",
+  "pydantic>=2.6,<3",
+  "pydantic-settings>=2.2,<3",
+  "argon2-cffi>=23.1,<26",
+  "cryptography>=42,<46",
+  "python-dotenv>=1.0,<2",
+  "httpx>=0.26,<1",
+  "openai>=1,<3",
+  "pandas>=2.0,<3",
+  "tushare>=1.2.60,<2",
+  "baostock>=0.8.9,<1",
+  "akshare>=1.16,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<9",
+  "pytest-asyncio>=0.23,<1",
+  "ruff>=0.6,<1",
+  "mypy>=1.11,<2",
+]
+
+[project.scripts]
+chan-api = "backend.app.main:run"
+chan-worker = "backend.app.worker.main:run"
+chan-openapi = "backend.app.export_openapi:main"
+chan-backup = "backend.app.backup_cli:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend", "migrations"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 110
+extend-exclude = ["backend/app/chan_core/vendor"]
+
+[tool.ruff.lint]
+
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501", "B008", "UP037"]
+per-file-ignores = { "tests/backend/conftest.py" = ["E402"] }
+
+[tool.mypy]
+python_version = "3.11"
+check_untyped_defs = true
+warn_unused_ignores = true
+exclude = ["backend/app/chan_core/vendor"]

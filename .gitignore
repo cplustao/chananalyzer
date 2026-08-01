@@ -31,12 +31,18 @@ scan_results.txt
 .pytest_cache/
 *.cache
 
-# 测试和结果文件
-test_*.py
-*_test.py
-tests/
+# 测试结果（测试源码需要纳入版本控制）
 .coverage
 htmlcov/
+coverage.xml
+
+# ChanAnalyzer v2 运行时数据
+data/
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+.ruff_cache/
+.mypy_cache/
 
 # 前端 web 相关（中文命名目录）
 前端web页面/
@@ -62,3 +68,9 @@ web/cache/
 *.swp
 *.swo
 AGENTS.md
+frontend/playwright-report/
+frontend/test-results/
+frontend/blob-report/
+# IDE analysis and local verification artifacts
+.trae/
+decision-review-live.png

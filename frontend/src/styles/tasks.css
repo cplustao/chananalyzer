@@ -1,0 +1,8 @@
+.worker-warning { display: flex; gap: 10px; margin: 14px 0; padding: 12px; border: 1px solid #76552a; border-radius: 8px; background: #2b2115; }
+.worker-warning > svg { flex: none; color: var(--warning); }
+.worker-warning p { margin: 4px 0 0; color: #c6b798; font-size: 12px; line-height: 1.5; }
+.toast-viewport { position: fixed; z-index: 1000; right: 18px; bottom: 18px; display: grid; gap: 8px; width: min(360px, calc(100vw - 24px)); pointer-events: none; }
+.app-toast { display: flex; align-items: center; gap: 9px; padding: 11px 13px; border: 1px solid var(--border); border-radius: 8px; background: #131d2a; box-shadow: 0 18px 50px rgba(0,0,0,.42); color: #e6edf6; }
+.app-toast svg { width: 17px; height: 17px; }
+.toast-success svg { color: #57d68a; }
+.toast-error svg { color: #ff777f; }

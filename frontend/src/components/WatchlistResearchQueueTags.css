@@ -1,0 +1,62 @@
+.watchlist-tag-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  margin: -1px 0 9px;
+  padding: 0 1px 8px;
+  border-bottom: 1px solid #302631;
+  scrollbar-color: #65303a transparent;
+  scrollbar-width: thin;
+}
+
+.watchlist-tag-filters > span {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 2px;
+  color: #7c8798;
+  font-size: 11px;
+}
+
+.watchlist-tag-filters > span svg {
+  width: 14px;
+  height: 14px;
+  color: #cf4b57;
+}
+
+.watchlist-tag-filters button {
+  flex: none;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid #303a49;
+  border-radius: 999px;
+  background: #111923;
+  color: #8693a5;
+  font-size: 11px;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.watchlist-tag-filters button:hover,
+.watchlist-tag-filters button:focus-visible {
+  border-color: #75404a;
+  color: #d5dce5;
+  outline: none;
+}
+
+.watchlist-tag-filters button.selected {
+  border-color: #c8404c;
+  background: rgba(190, 45, 57, 0.2);
+  color: #ff929a;
+}
+
+.watchlist-tag-filters button small {
+  margin-left: 3px;
+  color: #647184;
+  font-size: 9px;
+}
+
+.watchlist-tag-filters button.selected small {
+  color: #d2767d;
+}
