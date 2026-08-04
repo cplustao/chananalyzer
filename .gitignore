@@ -74,3 +74,4 @@ frontend/blob-report/
 # IDE analysis and local verification artifacts
 .trae/
 decision-review-live.png
+logs/

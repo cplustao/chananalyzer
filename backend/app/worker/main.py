@@ -67,7 +67,7 @@ def run() -> None:
                 failed_job = repository.get(job_id)
                 if failed_job is not None:
                     try:
-                        repository.fail(failed_job, str(exc))
+                        repository.fail(failed_job, str(exc), retryable=not isinstance(exc, ValueError))
                     except Exception:
                         session.rollback()
                         logger.exception(

@@ -7,8 +7,10 @@ from sqlalchemy import select
 from backend.app.db.models import (
     AnalysisRun,
     Bar,
+    Industry,
     Instrument,
     Job,
+    JobItem,
     LimitUpEvent,
     RadarSnapshot,
 )
@@ -118,6 +120,38 @@ def test_data_refresh_rerun_only_retries_failed_result_codes(client, session):
     assert rerun.payload["codes"] == ["000002", "600519", "300750"]
     assert rerun.payload["start_date"] == "2026-07-20"
     assert rerun.payload["end_date"] == "2026-07-29"
+
+
+def test_scan_rerun_filters_non_stock_legacy_subjects(client, session):
+    stock = Instrument(code="600519", ts_code="600519.SH", status="active")
+    legacy = Instrument(code="sh.000002", ts_code="sh.000002", status="active")
+    original = Job(kind="screen.smart", status="partial", payload={"codes": []})
+    session.add_all([stock, legacy, original])
+    session.flush()
+    session.add_all(
+        [
+            JobItem(job_id=original.id, subject_key=stock.code, status="failed", error="temporary"),
+            JobItem(job_id=original.id, subject_key=legacy.code, status="failed", error="no bars"),
+        ]
+    )
+    session.commit()
+
+    response = client.post(f"/api/v1/jobs/{original.id}/rerun")
+
+    assert response.status_code == 202
+    rerun = session.get(Job, response.json()["job_id"])
+    assert rerun is not None and rerun.payload["codes"] == ["600519"]
+
+    legacy_only = Job(kind="screen.smart", status="partial", payload={"codes": []})
+    session.add(legacy_only)
+    session.flush()
+    session.add(JobItem(job_id=legacy_only.id, subject_key=legacy.code, status="failed"))
+    session.commit()
+
+    rejected = client.post(f"/api/v1/jobs/{legacy_only.id}/rerun")
+
+    assert rejected.status_code == 409
+    assert "无需再次补跑" in rejected.json()["message"]
 
 
 def test_watchlist_is_normalized_and_idempotent(client, session):
@@ -292,6 +326,8 @@ def test_smart_screen_preserves_scan_side(client, session):
             "types": ["2s"],
             "industries": ["白酒"],
             "areas": ["贵州"],
+            "min_net_mf_amount": 1000,
+            "min_main_net_amount": 500,
         },
     )
     assert response.status_code == 202
@@ -299,6 +335,41 @@ def test_smart_screen_preserves_scan_side(client, session):
     assert job is not None
     assert job.kind == "screen.smart"
     assert job.payload["scan_side"] == "sell"
+    assert job.payload["min_net_mf_amount"] == 1000
+    assert job.payload["min_main_net_amount"] == 500
+
+
+def test_instrument_facets_return_selectable_counts(client, session):
+    industry = Industry(name="白酒", source="test")
+    session.add(industry)
+    session.flush()
+    session.add_all(
+        [
+            Instrument(
+                code="600519",
+                ts_code="600519.SH",
+                exchange="SH",
+                name="贵州茅台",
+                area="贵州",
+                industry_id=industry.id,
+                status="active",
+            ),
+            Instrument(
+                code="000858",
+                ts_code="000858.SZ",
+                exchange="SZ",
+                name="五粮液",
+                area="四川",
+                industry_id=industry.id,
+                status="active",
+            ),
+        ]
+    )
+    session.commit()
+    response = client.get("/api/v1/instruments/facets")
+    assert response.status_code == 200
+    assert {"value": "白酒", "count": 2} in response.json()["industries"]
+    assert {"value": "贵州", "count": 1} in response.json()["areas"]
 
 
 def test_bj_instrument_bars_fall_back_to_honestly_labelled_raw_series(client, session):
@@ -329,3 +400,48 @@ def test_bj_instrument_bars_fall_back_to_honestly_labelled_raw_series(client, se
     assert response.status_code == 200
     assert response.json()["adjustment"] == "NONE"
     assert response.json()["items"][0]["close"] == 10.5
+
+
+def test_radar_history_uses_one_algorithm_version_and_unique_trade_dates(client, session):
+    rows = [
+        RadarSnapshot(
+            trade_date=date(2026, 8, 1),
+            algorithm_version="history-1.1",
+            score=40,
+            status="weak",
+            status_label="偏弱",
+            snapshot={"components": []},
+            calculated_at=datetime(2026, 8, 1, 16, 0),
+        ),
+        RadarSnapshot(
+            trade_date=date(2026, 8, 1),
+            algorithm_version="history-2.0",
+            score=55,
+            status="neutral",
+            status_label="震荡",
+            snapshot={"components": []},
+            calculated_at=datetime(2026, 8, 1, 17, 0),
+        ),
+        RadarSnapshot(
+            trade_date=date(2026, 8, 2),
+            algorithm_version="history-2.0",
+            score=65,
+            status="warm",
+            status_label="偏强",
+            snapshot={"components": []},
+            calculated_at=datetime(2026, 8, 2, 17, 0),
+        ),
+    ]
+    session.add_all(rows)
+    session.commit()
+
+    current = client.get("/api/v1/market/radar/history?limit=10")
+    assert current.status_code == 200
+    payload = current.json()
+    assert payload["algorithm_version"] == "history-2.0"
+    assert [item["trade_date"] for item in payload["items"]] == ["2026-08-01", "2026-08-02"]
+    assert {item["algorithm_version"] for item in payload["items"]} == {"history-2.0"}
+
+    legacy = client.get("/api/v1/market/radar/history?algorithm_version=history-1.1")
+    assert legacy.status_code == 200
+    assert [item["trade_date"] for item in legacy.json()["items"]] == ["2026-08-01"]

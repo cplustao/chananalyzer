@@ -215,13 +215,8 @@ def test_native_ingestion_uses_explicit_unadjusted_fallback_for_bj(session):
         )
     ) == 2
 
-def test_default_refresh_end_uses_last_settled_open_day(session):
-    session.add_all(
-        [
-            TradingCalendar(trade_date=date(2030, 7, 29), is_open=True, source="test"),
-            TradingCalendar(trade_date=date(2030, 7, 30), is_open=True, source="test"),
-        ]
-    )
+def test_default_refresh_end_is_not_locked_by_stale_calendar(session):
+    session.add(TradingCalendar(trade_date=date(2030, 7, 29), is_open=True, source="test"))
     session.commit()
     service = IngestionService(session, FakeMarketDataProvider())
 

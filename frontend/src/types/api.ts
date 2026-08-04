@@ -4,6 +4,7 @@ type Schemas = components["schemas"]
 
 export type Instrument = Schemas["InstrumentView"]
 export type InstrumentPage = Schemas["InstrumentPage"]
+export type InstrumentFacets = Schemas["InstrumentFacets"]
 export type Bar = Schemas["BarView"]
 export type BarSeries = Schemas["BarSeries"]
 export type Job = Schemas["JobView"]
@@ -63,6 +64,7 @@ export type ChanStructureResponse = {
   calculated_at?: string | null
 }
 export type ExecutablePosition = {
+  position_algorithm_version?: string
   decision_score: number
   band: number
   status: string
@@ -70,6 +72,18 @@ export type ExecutablePosition = {
   min: number
   max: number
   mid: number
+  base_band?: number
+  base_status?: string
+  base_status_label?: string
+  base_min?: number
+  base_max?: number
+  base_mid?: number
+  base_reason?: string
+  risk_cap_band?: number
+  risk_level?: "normal" | "caution" | "high" | "extreme"
+  risk_triggered?: boolean
+  risk_reasons?: string[]
+  raw_score?: number
   action: "increase" | "decrease" | "hold"
   reason: string
   effective: string

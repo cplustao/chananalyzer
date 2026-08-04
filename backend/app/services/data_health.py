@@ -24,6 +24,20 @@ from backend.app.services.secrets import SecretService
 _STATE_RANK = {"fresh": 0, "partial": 1, "stale": 2, "missing": 3}
 
 
+def expected_trade_date(session: Session, now: datetime | None = None) -> date | None:
+    """Return the latest trading day whose daily data should already be settled."""
+    local_now = now or datetime.now(ZoneInfo("Asia/Shanghai"))
+    settled_through = local_now.date()
+    if local_now.time() < time(16, 30):
+        settled_through -= timedelta(days=1)
+    return session.scalar(
+        select(func.max(TradingCalendar.trade_date)).where(
+            TradingCalendar.is_open.is_(True),
+            TradingCalendar.trade_date <= settled_through,
+        )
+    )
+
+
 class DataHealthService:
     def __init__(self, session: Session, settings: Settings):
         self.session = session
@@ -59,16 +73,7 @@ class DataHealthService:
         }
 
     def _expected_trade_date(self, now: datetime | None = None) -> date | None:
-        local_now = now or datetime.now(ZoneInfo("Asia/Shanghai"))
-        settled_through = local_now.date()
-        if local_now.time() < time(16, 30):
-            settled_through -= timedelta(days=1)
-        return self.session.scalar(
-            select(func.max(TradingCalendar.trade_date)).where(
-                TradingCalendar.is_open.is_(True),
-                TradingCalendar.trade_date <= settled_through,
-            )
-        )
+        return expected_trade_date(self.session, now)
 
     def _failure(self, kind: str) -> dict[str, Any] | None:
         job = self.session.scalar(
@@ -172,37 +177,62 @@ class DataHealthService:
             or_(Instrument.exchange.is_(None), Instrument.exchange != "BJ")
             & (Bar.adjustment == "QFQ"),
         )
-        latest_by_instrument = (
-            select(
-                Bar.instrument_id.label("instrument_id"),
-                func.max(Bar.bar_time).label("latest_bar_time"),
-            )
-            .join(Instrument, Instrument.id == Bar.instrument_id)
+        canonical_series = (
+            select(Bar.id)
             .where(
-                *eligibility,
+                Bar.instrument_id == Instrument.id,
                 Bar.timeframe == "DAY",
                 Bar.quality_status == "ok",
                 canonical_adjustment,
             )
-            .group_by(Bar.instrument_id)
-            .subquery()
+            .limit(1)
+            .exists()
         )
         series_count = int(
-            self.session.scalar(select(func.count()).select_from(latest_by_instrument)) or 0
+            self.session.scalar(
+                select(func.count(Instrument.id)).where(*eligibility, canonical_series)
+            )
+            or 0
         )
-        latest = self.session.scalar(select(func.max(latest_by_instrument.c.latest_bar_time)))
-        current_count = (
-            int(
+        if expected:
+            day_start = datetime.combine(expected, time.min)
+            day_end = day_start + timedelta(days=1)
+            current_series = (
+                select(Bar.id)
+                .where(
+                    Bar.instrument_id == Instrument.id,
+                    Bar.timeframe == "DAY",
+                    Bar.quality_status == "ok",
+                    canonical_adjustment,
+                    Bar.bar_time >= day_start,
+                    Bar.bar_time < day_end,
+                )
+                .limit(1)
+                .exists()
+            )
+            current_count = int(
                 self.session.scalar(
-                    select(func.count())
-                    .select_from(latest_by_instrument)
-                    .where(func.date(latest_by_instrument.c.latest_bar_time) == expected.isoformat())
+                    select(func.count(Instrument.id)).where(*eligibility, current_series)
                 )
                 or 0
             )
-            if expected
-            else series_count
-        )
+        else:
+            current_count = series_count
+        # A current canonical series proves the maximum date without repeatedly
+        # aggregating the complete multi-million-row bar table. Only stale or empty
+        # datasets need the slower fallback query.
+        latest = datetime.combine(expected, time.min) if expected and current_count else None
+        if latest is None:
+            latest = self.session.scalar(
+                select(func.max(Bar.bar_time))
+                .join(Instrument, Instrument.id == Bar.instrument_id)
+                .where(
+                    *eligibility,
+                    Bar.timeframe == "DAY",
+                    Bar.quality_status == "ok",
+                    canonical_adjustment,
+                )
+            )
         missing_count = max(0, eligible_count - series_count)
         lagging_count = max(0, series_count - current_count)
         coverage = current_count / eligible_count if eligible_count else 0.0

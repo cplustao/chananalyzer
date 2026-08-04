@@ -8,7 +8,7 @@ const JOB_KIND_LABELS: Record<string, string> = {
   "screen.smart": "智能条件筛选",
   "limit_up.analyze": "涨停股批量分析",
   "ipo.analyze": "新股批量分析",
-  "stock.analyze": "个股缠论分析",
+  "stock.analyze": "个股研究分析",
   "data.refresh": "行情数据更新",
 }
 
@@ -65,7 +65,7 @@ export function systemLabel(value?: string | null) {
   return SYSTEM_STATUS_LABELS[value.toLowerCase()] ?? value
 }
 const ANALYSIS_KIND_LABELS: Record<string, string> = {
-  stock: "个股缠论",
+  stock: "个股研究",
   limit_up: "涨停分析",
   ipo: "新股分析",
 }
@@ -73,6 +73,7 @@ const ANALYSIS_KIND_LABELS: Record<string, string> = {
 const ANALYSIS_ROLE_LABELS: Record<string, string> = {
   analyst: "研究员报告",
   decision: "决策报告",
+  review: "独立风控复核",
 }
 
 export function analysisKindLabel(value: string) {

@@ -42,7 +42,15 @@ def system_status(
         last_heartbeat=worker.heartbeat_at if worker else None,
         active_job=worker.active_job_id if worker else None,
         data_counts={
-            "instruments": int(session.scalar(select(func.count()).select_from(Instrument)) or 0),
+            "instruments": int(
+                session.scalar(
+                    select(func.count()).select_from(Instrument).where(
+                        Instrument.status == "active",
+                        func.length(Instrument.code) == 6,
+                    )
+                )
+                or 0
+            ),
             "bars": int(session.scalar(select(func.count()).select_from(Bar)) or 0),
             "jobs": int(session.scalar(select(func.count()).select_from(Job)) or 0),
             "analysis_runs": int(session.scalar(select(func.count()).select_from(AnalysisRun)) or 0),

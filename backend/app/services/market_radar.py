@@ -99,6 +99,7 @@ class MarketRadarService:
         )
         median_change = _median(changes)
         average_change = _mean(changes)
+        return_dispersion = statistics.pstdev(changes) if len(changes) >= 2 else None
         median_5d = _median(returns_5d)
         amount = sum(row["amount"] for row in rows)
         previous_amount = sum(row["previous_amount"] for row in rows)
@@ -196,7 +197,7 @@ class MarketRadarService:
                 },
             },
         ]
-        snapshot = {
+        snapshot: dict[str, Any] = {
             "trade_date": latest_date.date().isoformat(),
             "generated_at": datetime.now().astimezone().isoformat(),
             "source": "v2 日线 + v2 涨停事件",
@@ -222,6 +223,7 @@ class MarketRadarService:
                 "flat": flat,
                 "advance_rate": round(advance_ratio, 4),
                 "decline_rate": round(decline_ratio, 4),
+                "return_dispersion": _round(return_dispersion),
                 "above_ma20_count": above_ma20,
                 "above_ma20_rate": _round(ma20_ratio, 4),
                 "limit_down_count": limit_down_count,

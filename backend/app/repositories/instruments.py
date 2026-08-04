@@ -3,7 +3,7 @@
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from backend.app.db.models import Bar, Instrument
+from backend.app.db.models import Bar, Industry, Instrument
 
 
 class InstrumentRepository:
@@ -28,6 +28,36 @@ class InstrumentRepository:
             statement.order_by(Instrument.code).offset((page - 1) * page_size).limit(page_size)
         ).all()
         return list(items), total
+    def facets(self) -> dict[str, object]:
+        eligible = (
+            func.length(Instrument.code) == 6,
+            Instrument.status == "active",
+        )
+        industries = self.session.execute(
+            select(Industry.name, func.count(Instrument.id))
+            .join(Instrument, Instrument.industry_id == Industry.id)
+            .where(*eligible)
+            .group_by(Industry.name)
+            .order_by(func.count(Instrument.id).desc(), Industry.name)
+        ).all()
+        areas = self.session.execute(
+            select(Instrument.area, func.count(Instrument.id))
+            .where(*eligible, Instrument.area.is_not(None), Instrument.area != "")
+            .group_by(Instrument.area)
+            .order_by(func.count(Instrument.id).desc(), Instrument.area)
+        ).all()
+        total = int(
+            self.session.scalar(
+                select(func.count()).select_from(Instrument).where(*eligible)
+            )
+            or 0
+        )
+        return {
+            "industries": [{"value": str(name), "count": int(count)} for name, count in industries],
+            "areas": [{"value": str(name), "count": int(count)} for name, count in areas],
+            "eligible_count": total,
+        }
+
 
     def get(self, instrument_id: int) -> Instrument | None:
         return self.session.scalar(

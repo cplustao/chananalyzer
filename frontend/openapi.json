@@ -282,6 +282,27 @@
         }
       }
     },
+    "/api/v1/instruments/facets": {
+      "get": {
+        "tags": [
+          "instruments"
+        ],
+        "summary": "Get Instrument Facets",
+        "operationId": "get_instrument_facets_api_v1_instruments_facets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstrumentFacets"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/instruments/{instrument_id}": {
       "get": {
         "tags": [
@@ -467,6 +488,80 @@
               "type": "boolean",
               "default": false,
               "title": "Force"
+            }
+          },
+          {
+            "name": "include_ai",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Ai"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobAccepted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/instruments/{instrument_id}/refresh": {
+      "post": {
+        "tags": [
+          "instruments"
+        ],
+        "summary": "Refresh Instrument",
+        "operationId": "refresh_instrument_api_v1_instruments__instrument_id__refresh_post",
+        "parameters": [
+          {
+            "name": "instrument_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Instrument Id"
+            }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Force"
+            }
+          },
+          {
+            "name": "lookback_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 3650,
+              "minimum": 1,
+              "default": 30,
+              "title": "Lookback Days"
             }
           }
         ],
@@ -1029,6 +1124,23 @@
               "type": "integer",
               "default": 120,
               "title": "Limit"
+            }
+          },
+          {
+            "name": "algorithm_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Algorithm Version"
             }
           }
         ],
@@ -2714,6 +2826,53 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "InstrumentFacetItem": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "count"
+        ],
+        "title": "InstrumentFacetItem"
+      },
+      "InstrumentFacets": {
+        "properties": {
+          "industries": {
+            "items": {
+              "$ref": "#/components/schemas/InstrumentFacetItem"
+            },
+            "type": "array",
+            "title": "Industries"
+          },
+          "areas": {
+            "items": {
+              "$ref": "#/components/schemas/InstrumentFacetItem"
+            },
+            "type": "array",
+            "title": "Areas"
+          },
+          "eligible_count": {
+            "type": "integer",
+            "title": "Eligible Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "industries",
+          "areas",
+          "eligible_count"
+        ],
+        "title": "InstrumentFacets"
+      },
       "InstrumentPage": {
         "properties": {
           "items": {
@@ -3393,12 +3552,37 @@
             "title": "Exclude St",
             "default": true
           },
+          "min_net_mf_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Net Mf Amount"
+          },
+          "min_main_net_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Main Net Amount"
+          },
           "rank_type": {
             "type": "string",
             "enum": [
               "top_gainers",
-              "turnover",
-              "volume"
+              "top_losers",
+              "top_volume",
+              "top_amount",
+              "top_turnover",
+              "dragon_tiger"
             ],
             "title": "Rank Type",
             "default": "top_gainers"
@@ -3468,6 +3652,28 @@
             "type": "boolean",
             "title": "Exclude St",
             "default": true
+          },
+          "min_net_mf_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Net Mf Amount"
+          },
+          "min_main_net_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Main Net Amount"
           },
           "rank_type": {
             "type": "string",
@@ -3701,6 +3907,11 @@
             "type": "string",
             "pattern": "^\\d{6}$",
             "title": "Code"
+          },
+          "include_ai": {
+            "type": "boolean",
+            "title": "Include Ai",
+            "default": false
           }
         },
         "additionalProperties": false,

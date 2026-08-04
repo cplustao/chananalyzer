@@ -52,6 +52,20 @@ def test_scan_handler_persists_job_items_and_progress(session):
     assert (job.total, job.completed, job.failed, job.progress) == (1, 1, 0, 100.0)
     assert item.subject_key == "600519" and item.status == "completed"
 
+def test_scan_universe_excludes_legacy_prefixed_securities(session):
+    from backend.app.db.models import Instrument
+    from backend.app.services.job_handlers import JobHandlers
+
+    canonical = Instrument(code="600519", ts_code="600519.SH", status="active")
+    legacy_index = Instrument(code="sh.000002", ts_code="sh.000002", status="active")
+    session.add_all([canonical, legacy_index])
+    session.commit()
+    handler = JobHandlers(session)
+
+    assert handler._codes({}) == ["600519"]
+    assert handler._codes({"codes": ["sh.000002", "600519"]}) == ["600519"]
+
+
 def test_chan_values_are_json_safe():
     import json
     from enum import Enum

@@ -1,1 +1,55 @@
 .job-row, tbody tr { content-visibility: auto; contain-intrinsic-size: auto 48px; }
+.position-band-base {
+  border-color: #2b4057;
+  background: #121d29;
+}
+
+.position-band-base strong {
+  color: #8eb8dc;
+  font-size: 15px;
+}
+
+.position-risk {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #6a5228;
+  border-radius: 6px;
+  background: #251f16;
+}
+
+.position-risk > svg {
+  width: 16px;
+  flex: none;
+  color: #e2a23b;
+}
+
+.position-risk strong {
+  font-size: 12px;
+  color: #e6c98f;
+}
+
+.position-risk p {
+  margin: 3px 0 0;
+  color: #9c8969;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.position-risk.risk-high,
+.position-risk.risk-extreme {
+  border-color: #703039;
+  background: #27171d;
+}
+
+.position-risk.risk-high > svg,
+.position-risk.risk-extreme > svg {
+  color: #ef6671;
+}
+
+.position-risk.risk-high strong,
+.position-risk.risk-extreme strong {
+  color: #ff929a;
+}

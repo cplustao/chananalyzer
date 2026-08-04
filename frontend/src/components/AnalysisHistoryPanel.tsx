@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react"
+import { lazy, Suspense, useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { FileText, ScrollText } from "lucide-react"
 import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/common"
@@ -17,11 +17,13 @@ export function AnalysisHistoryPanel({
   title = "研究报告",
   error,
   retry,
+  autoOpenRunId,
 }: {
   history?: AnalysisPage
   title?: string
   error?: unknown
   retry?: () => void
+  autoOpenRunId?: string | null
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const detail = useQuery({
@@ -29,6 +31,18 @@ export function AnalysisHistoryPanel({
     queryFn: () => api<AnalysisDetail>(`/analyses/${selectedId}`),
     enabled: Boolean(selectedId),
   })
+  const latestRunId = history?.items.find((run) => run.report_count > 0)?.id ?? null
+  const latestDetail = useQuery({
+    queryKey: ["analysis-detail", latestRunId],
+    queryFn: () => api<AnalysisDetail>(`/analyses/${latestRunId}`),
+    enabled: Boolean(latestRunId),
+  })
+
+
+  useEffect(() => {
+    if (autoOpenRunId) setSelectedId(autoOpenRunId)
+  }, [autoOpenRunId])
+
 
   if (error) return <ErrorPanel error={error} retry={retry} />
   if (!history) return <LoadingPanel rows={4} />
@@ -41,6 +55,7 @@ export function AnalysisHistoryPanel({
       <section className="panel table-panel">
         <div className="panel-title">
           <span><ScrollText size={17} />{title}</span>
+      {latestDetail.data ? <FeaturedConclusion detail={latestDetail.data} onOpen={() => setSelectedId(latestDetail.data.id)} /> : null}
           <Badge>{history.total}</Badge>
         </div>
         <div className="table-scroll">
@@ -77,6 +92,33 @@ export function AnalysisHistoryPanel({
   )
 }
 
+function FeaturedConclusion({ detail, onOpen }: { detail: AnalysisDetail; onOpen: () => void }) {
+  const report = detail.reports.find((item) => item.role === "decision" && item.status === "completed")
+    ?? detail.reports.find((item) => item.role === "analyst" && item.status === "completed")
+  if (!report) return null
+  const snapshot = detail.input_snapshot ?? {}
+  const quote = snapshot.realtime_quote as Record<string, unknown> | undefined
+  const flow = snapshot.money_flow as Record<string, unknown> | undefined
+  return (
+    <section className="panel featured-conclusion">
+      <div className="panel-title">
+        <span><FileText size={17} />最新 AI 综合结论</span>
+        <Button variant="outline" size="sm" onClick={onOpen}>查看完整三方报告</Button>
+      </div>
+      <div className="featured-context">
+        <Badge variant="outline">{detail.subject_date ?? "日期未知"}</Badge>
+        <Badge variant="outline">{analysisRoleLabel(report.role)}</Badge>
+        <span>实时行情：{String(quote?.status ?? "未接入")}</span>
+        <span>资金流：{String(flow?.status ?? "未接入")}</span>
+      </div>
+      <Suspense fallback={<div className="report-content muted">正在排版综合结论…</div>}>
+        <MarkdownReport content={report.content} />
+      </Suspense>
+    </section>
+  )
+}
+
+
 function AnalysisDetailContent({ detail }: { detail: AnalysisDetail }) {
   const metrics = detail.metrics
   return (
@@ -107,9 +149,13 @@ function AnalysisDetailContent({ detail }: { detail: AnalysisDetail }) {
       {detail.reports.map((report) => (
         <article key={report.id} className="report-document">
           <div>
+            <Badge variant="outline" className={`status-${report.status}`}>{jobStatusLabel(report.status)}</Badge>
             <strong>{analysisRoleLabel(report.role)}</strong>
             <Badge variant="outline">{report.model ?? report.provider ?? "历史模型"}</Badge>
           </div>
+          {report.status !== "completed" && report.validation_error ? (
+            <div className="radar-notice"><strong>报告生成失败</strong><p>{report.validation_error}</p></div>
+          ) : null}
           <Suspense fallback={<div className="report-content muted">正在排版报告…</div>}><MarkdownReport content={report.content} /></Suspense>
         </article>
       ))}

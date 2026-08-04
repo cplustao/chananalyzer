@@ -8,11 +8,10 @@ from datetime import time as dt_time
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.errors import sanitize_text
-from backend.app.db.models import IngestionRun, TradingCalendar
+from backend.app.db.models import IngestionRun
 from backend.app.db.models.common import utcnow
 from backend.app.providers.market_data import (
     HistoricalMarketDataProvider,
@@ -165,16 +164,8 @@ class IngestionService:
         settled_through = local_now.date()
         if local_now.time() < dt_time(16, 30):
             settled_through -= timedelta(days=1)
-        latest_open = self.session.scalar(
-            select(TradingCalendar.trade_date)
-            .where(
-                TradingCalendar.is_open.is_(True),
-                TradingCalendar.trade_date <= settled_through,
-            )
-            .order_by(TradingCalendar.trade_date.desc())
-            .limit(1)
-        )
-        return latest_open or settled_through
+        return settled_through
+
     def refresh_bars(
         self,
         *,
@@ -188,6 +179,11 @@ class IngestionService:
         cancelled: CancelCallback | None = None,
     ) -> dict[str, Any]:
         end = end_date or self._settled_end_date()
+        calendar_end = (
+            end
+            if end_date is not None
+            else datetime.now(ZoneInfo("Asia/Shanghai")).date()
+        )
         start = start_date or end - timedelta(days=max(1, lookback_days))
         if start > end:
             raise ValueError("行情刷新开始日期不能晚于结束日期")
@@ -233,14 +229,14 @@ class IngestionService:
         calendar_source = self.provider.key
         try:
             try:
-                calendar = self.provider.fetch_calendar(start_date=start, end_date=end)
+                calendar = self.provider.fetch_calendar(start_date=start, end_date=calendar_end)
                 provider_chain.extend(_attempts(self.provider, "last_calendar_attempts"))
                 calendar_source = (
                     getattr(self.provider, "last_calendar_provider_key", None) or self.provider.key
                 )
             except Exception:
                 provider_chain.extend(_attempts(self.provider, "last_calendar_attempts"))
-                calendar = self.repository.saved_calendar(start_date=start, end_date=end)
+                calendar = self.repository.saved_calendar(start_date=start, end_date=calendar_end)
                 if not calendar:
                     raise
                 calendar_source = "saved-calendar"

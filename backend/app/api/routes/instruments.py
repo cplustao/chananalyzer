@@ -1,11 +1,18 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import current_user
-from backend.app.api.schemas import BarSeries, BarView, InstrumentPage, InstrumentView, JobAccepted
+from backend.app.api.schemas import (
+    BarSeries,
+    BarView,
+    InstrumentFacets,
+    InstrumentPage,
+    InstrumentView,
+    JobAccepted,
+)
 from backend.app.db.models import AnalysisRun, User
 from backend.app.db.session import get_session
 from backend.app.repositories.instruments import InstrumentRepository
@@ -30,6 +37,14 @@ def list_instruments(
         page=page,
         page_size=page_size,
     )
+
+@router.get("/facets", response_model=InstrumentFacets)
+def get_instrument_facets(
+    session: Session = Depends(get_session),
+    _user: User = Depends(current_user),
+) -> InstrumentFacets:
+    return InstrumentFacets.model_validate(InstrumentRepository(session).facets())
+
 
 
 @router.get("/{instrument_id}", response_model=InstrumentView)
@@ -104,6 +119,7 @@ def get_chan_structure(
 def analyze_instrument(
     instrument_id: int,
     force: bool = False,
+    include_ai: bool = False,
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ) -> JobAccepted:
@@ -111,6 +127,40 @@ def analyze_instrument(
     if instrument is None:
         raise HTTPException(status_code=404, detail="股票不存在")
     job, deduplicated = JobRepository(session).create(
-        "stock.analyze", {"code": instrument.code}, user.id, force=force, max_attempts=3
+        "stock.analyze",
+        {"code": instrument.code, "include_ai": include_ai},
+        user.id,
+        force=force,
+        max_attempts=3,
+    )
+    return JobAccepted(job_id=job.id, status=job.status, deduplicated=deduplicated)
+
+@router.post("/{instrument_id}/refresh", response_model=JobAccepted, status_code=202)
+def refresh_instrument(
+    instrument_id: int,
+    force: bool = False,
+    lookback_days: int = Query(30, ge=1, le=3650),
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+) -> JobAccepted:
+    instrument = InstrumentRepository(session).get(instrument_id)
+    if instrument is None:
+        raise HTTPException(status_code=404, detail="股票不存在")
+    if len(instrument.code) != 6 or not instrument.code.isdigit():
+        raise HTTPException(status_code=422, detail="当前记录不是规范 A 股个股，无法执行单股行情更新")
+    adjustment = "NONE" if str(instrument.exchange or "").upper() == "BJ" else "QFQ"
+    payload = {
+        "codes": [instrument.code],
+        "lookback_days": lookback_days,
+        "timeframe": "DAY",
+        "adjustment": adjustment,
+        "refresh_master_data": False,
+    }
+    job, deduplicated = JobRepository(session).create(
+        "data.refresh",
+        payload,
+        user.id,
+        force=force,
+        max_attempts=3,
     )
     return JobAccepted(job_id=job.id, status=job.status, deduplicated=deduplicated)

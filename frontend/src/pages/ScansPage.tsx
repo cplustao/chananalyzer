@@ -18,7 +18,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { api, post } from "@/lib/api"
 import { jobKindLabel, jobStatusLabel } from "@/lib/labels"
-import type { Job, JobAccepted, ScanHistoryItem, ScanResult } from "@/types/api"
+import type { InstrumentFacets, Job, JobAccepted, ScanHistoryItem, ScanResult } from "@/types/api"
 
 const signalLabels: Record<string, string> = {
   "1": "一类",
@@ -42,6 +42,34 @@ function splitValues(value: string) {
   return value.split(/[\s,，]+/).map((item) => item.trim()).filter(Boolean)
 }
 
+type FacetItem = InstrumentFacets["industries"][number]
+
+function FacetPicker({
+  label,
+  items,
+  selected,
+  onChange,
+}: {
+  label: string
+  items: FacetItem[]
+  selected: string[]
+  onChange: (values: string[]) => void
+}) {
+  return (
+    <label>
+      <span>{label}{selected.length ? `（已选 ${selected.length}）` : ""}</span>
+      <select
+        multiple
+        className="facet-select"
+        value={selected}
+        onChange={(event) => onChange(Array.from(event.currentTarget.selectedOptions, (option) => option.value))}
+      >
+        {items.map((item) => <option key={item.value} value={item.value}>{item.value}（{item.count}）</option>)}
+      </select>
+    </label>
+  )
+}
+
 export function ScansPage({ screener = false }: { screener?: boolean }) {
   const modes = screener ? (["hot", "smart"] as const) : (["buy", "sell"] as const)
   const [mode, setMode] = useState<string>(modes[0])
@@ -49,8 +77,10 @@ export function ScansPage({ screener = false }: { screener?: boolean }) {
   const [jobId, setJobId] = useState<string | null>(null)
   const [rankType, setRankType] = useState("top_gainers")
   const [scanSide, setScanSide] = useState("buy")
-  const [industries, setIndustries] = useState("")
-  const [areas, setAreas] = useState("")
+  const [industries, setIndustries] = useState<string[]>([])
+  const [areas, setAreas] = useState<string[]>([])
+  const [minNetFlow, setMinNetFlow] = useState("")
+  const [minMainFlow, setMinMainFlow] = useState("")
   const [excludeSt, setExcludeSt] = useState(true)
   const [types, setTypes] = useState<string[]>(["1", "2", "3a", "3b"])
   const [resultFilter, setResultFilter] = useState("")
@@ -60,6 +90,11 @@ export function ScansPage({ screener = false }: { screener?: boolean }) {
     queryKey: ["scan-history"],
     queryFn: () => api<ScanHistoryItem[]>("/scans/history?limit=30"),
     refetchInterval: 5000,
+  })
+  const facets = useQuery({
+    queryKey: ["instrument-facets"],
+    queryFn: () => api<InstrumentFacets>("/instruments/facets"),
+    staleTime: 10 * 60 * 1000,
   })
   const effectiveSide = mode === "buy" || mode === "sell" ? mode : mode === "hot" ? "buy" : scanSide
   const toggleType = (type: string) => {
@@ -74,8 +109,10 @@ export function ScansPage({ screener = false }: { screener?: boolean }) {
         scan_side: effectiveSide,
         codes: splitValues(codes),
         types,
-        industries: splitValues(industries),
-        areas: splitValues(areas),
+        industries,
+        areas,
+        min_net_mf_amount: minNetFlow === "" ? undefined : Number(minNetFlow),
+        min_main_net_amount: minMainFlow === "" ? undefined : Number(minMainFlow),
         exclude_st: excludeSt,
         rank_type: rankType,
         top_n: 200,
@@ -196,13 +233,25 @@ export function ScansPage({ screener = false }: { screener?: boolean }) {
                   </SelectContent>
                 </Select>
               </label>
+              <FacetPicker
+                label="行业（按 Ctrl/Cmd 可多选）"
+                items={facets.data?.industries ?? []}
+                selected={industries}
+                onChange={setIndustries}
+              />
+              <FacetPicker
+                label="地区（按 Ctrl/Cmd 可多选）"
+                items={facets.data?.areas ?? []}
+                selected={areas}
+                onChange={setAreas}
+              />
               <label>
-                <span>行业（多个用逗号分隔）</span>
-                <Input value={industries} onChange={(event) => setIndustries(event.target.value)} placeholder="例如：半导体, 证券" />
+                <span>近一日净流入下限（万元，可选）</span>
+                <Input type="number" value={minNetFlow} onChange={(event) => setMinNetFlow(event.target.value)} placeholder="例如：1000" />
               </label>
               <label>
-                <span>地区（多个用逗号分隔）</span>
-                <Input value={areas} onChange={(event) => setAreas(event.target.value)} placeholder="例如：上海, 深圳" />
+                <span>近一日主力净流入下限（万元，可选）</span>
+                <Input type="number" value={minMainFlow} onChange={(event) => setMinMainFlow(event.target.value)} placeholder="例如：500" />
               </label>
             </>
           ) : null}

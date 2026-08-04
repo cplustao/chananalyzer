@@ -109,6 +109,41 @@ class HotStockService:
         items.sort(key=lambda item: float(item.get(key) or 0), reverse=reverse)
         return items[:top_n]
 
+    def money_flow_map(self) -> dict[str, dict[str, Any]]:
+        """Return one latest market-wide money-flow snapshot keyed by six-digit code."""
+        if not self.tushare_token:
+            raise RuntimeError("资金流筛选需要先配置有效的 Tushare Token")
+        latest = self.session.scalar(
+            select(func.max(Bar.bar_time))
+            .join(Instrument, Instrument.id == Bar.instrument_id)
+            .where(Bar.timeframe == "DAY", preferred_bar_condition())
+        )
+        if latest is None:
+            return {}
+        import tushare as ts
+
+        frame = ts.pro_api(self.tushare_token).moneyflow(trade_date=latest.strftime("%Y%m%d"))
+        if frame is None or frame.empty:
+            return {}
+        result: dict[str, dict[str, Any]] = {}
+        for row in frame.to_dict("records"):
+            ts_code = str(row.get("ts_code") or "")
+            code = ts_code[:6]
+            buy_large = _number(row.get("buy_lg_amount")) + _number(row.get("buy_elg_amount"))
+            sell_large = _number(row.get("sell_lg_amount")) + _number(row.get("sell_elg_amount"))
+            result[code] = {
+                "source": "tushare.moneyflow",
+                "trade_date": str(row.get("trade_date") or ""),
+                "unit": "万元",
+                "net_amount": _number(row.get("net_mf_amount")),
+                "main_net_amount": round(buy_large - sell_large, 4),
+                "buy_large_amount": _number(row.get("buy_lg_amount")),
+                "sell_large_amount": _number(row.get("sell_lg_amount")),
+                "buy_extra_large_amount": _number(row.get("buy_elg_amount")),
+                "sell_extra_large_amount": _number(row.get("sell_elg_amount")),
+            }
+        return result
+
     def _dragon_tiger(self, top_n: int) -> list[dict[str, Any]]:
         if not self.tushare_token:
             raise RuntimeError("龙虎榜需要先配置有效的 Tushare Token")

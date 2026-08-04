@@ -46,6 +46,17 @@ class InstrumentPage(ApiModel):
     page: int
     page_size: int
 
+class InstrumentFacetItem(ApiModel):
+    value: str
+    count: int
+
+
+class InstrumentFacets(ApiModel):
+    industries: list[InstrumentFacetItem]
+    areas: list[InstrumentFacetItem]
+    eligible_count: int
+
+
 
 class BarView(ApiModel):
     bar_time: datetime
@@ -98,7 +109,16 @@ class ScanPayload(StrictPayload):
     industries: list[str] = Field(default_factory=list, max_length=100)
     areas: list[str] = Field(default_factory=list, max_length=100)
     exclude_st: bool = True
-    rank_type: Literal["top_gainers", "turnover", "volume"] = "top_gainers"
+    min_net_mf_amount: float | None = None
+    min_main_net_amount: float | None = None
+    rank_type: Literal[
+        "top_gainers",
+        "top_losers",
+        "top_volume",
+        "top_amount",
+        "top_turnover",
+        "dragon_tiger",
+    ] = "top_gainers"
     top_n: int = Field(default=200, ge=1, le=500)
 
 
@@ -110,6 +130,7 @@ class BatchAnalysisPayload(StrictPayload):
 
 class StockAnalysisPayload(StrictPayload):
     code: StockCode
+    include_ai: bool = False
 
 
 class DataRefreshPayload(StrictPayload):

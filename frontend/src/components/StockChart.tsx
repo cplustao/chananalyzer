@@ -3,9 +3,11 @@ import type { ECharts } from "echarts/core"
 import type { Bar, ChanAnalysis, ChanLine } from "@/types/api"
 import { normalizeTradingDate } from "@/lib/trading-date"
 import { detectChanDivergences } from "@/lib/chan-divergence"
+import { fractalsFromStrokes } from "@/lib/chan-fractals"
 
 export type ChanLayerVisibility = {
   bi: boolean
+  fractals: boolean
   segments: boolean
   centers: boolean
   signals: boolean
@@ -21,7 +23,6 @@ function lineSeriesData(lines: ChanLine[], dates: string[]) {
   }
   return dates.map((date) => points.get(date) ?? null)
 }
-
 function ema(values: number[], period: number) {
   if (!values.length) return []
   const factor = 2 / (period + 1)
@@ -70,6 +71,7 @@ export function CandlestickChart({
       const sellSignals = analysis?.sell_signals ?? []
       const macdValues = macd(ordered.map((bar) => bar.close))
       const divergences = detectChanDivergences(analysis?.bi_list ?? [])
+      const fractals = fractalsFromStrokes(analysis?.bi_list ?? [])
 
       const option = {
         animation: false,
@@ -230,6 +232,33 @@ export function CandlestickChart({
               },
             })),
           },
+          ...(layers.fractals && fractals.length
+            ? [
+                {
+                  name: "顶分型",
+                  type: "scatter" as const,
+                  data: fractals.filter((item) => item.kind === "top").map((item) => ({
+                    value: [item.date, item.price],
+                    symbol: "triangle",
+                    symbolRotate: 180,
+                    symbolSize: item.confirmed ? 11 : 8,
+                    itemStyle: { color: item.confirmed ? "#a855f7" : "#7e5a91", opacity: item.confirmed ? 1 : .65 },
+                  })),
+                  z: 12,
+                },
+                {
+                  name: "底分型",
+                  type: "scatter" as const,
+                  data: fractals.filter((item) => item.kind === "bottom").map((item) => ({
+                    value: [item.date, item.price],
+                    symbol: "triangle",
+                    symbolSize: item.confirmed ? 11 : 8,
+                    itemStyle: { color: item.confirmed ? "#38bdf8" : "#557b8c", opacity: item.confirmed ? 1 : .65 },
+                  })),
+                  z: 12,
+                },
+              ]
+            : []),
           ...(layers.bi && analysis?.bi_list?.length
             ? [{
                 name: "笔",

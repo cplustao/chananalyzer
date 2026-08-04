@@ -248,11 +248,11 @@ class JobRepository:
         self.touch_worker(None, commit=False)
         self.session.commit()
 
-    def fail(self, job: Job, error: str) -> None:
+    def fail(self, job: Job, error: str, *, retryable: bool = True) -> None:
         safe_error = sanitize_text(error)
         job.error = safe_error
         job.heartbeat_at = utcnow()
-        if job.attempts < job.max_attempts and not job.cancel_requested:
+        if retryable and job.attempts < job.max_attempts and not job.cancel_requested:
             job.status = "queued"
             job.message = f"执行失败，将重试（{job.attempts}/{job.max_attempts}）"
             self.append_event(job, "retrying", {"error": safe_error, "attempt": job.attempts})

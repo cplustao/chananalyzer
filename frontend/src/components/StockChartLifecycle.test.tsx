@@ -1,6 +1,7 @@
 import { render, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { CandlestickChart, type ChanLayerVisibility } from "./StockChart"
+import { fractalsFromStrokes } from "@/lib/chan-fractals"
 import type { Bar } from "@/types/api"
 
 const mocks = vi.hoisted(() => ({
@@ -32,7 +33,7 @@ const bars: Bar[] = [{
   amount: null,
   turnover_rate: null,
 }]
-const layers: ChanLayerVisibility = { bi: true, segments: true, centers: true, signals: true, divergence: true }
+const layers: ChanLayerVisibility = { bi: true, fractals: true, segments: true, centers: true, signals: true, divergence: true }
 
 describe("CandlestickChart lifecycle", () => {
   beforeEach(() => {
@@ -51,5 +52,26 @@ describe("CandlestickChart lifecycle", () => {
     expect(mocks.dispose).not.toHaveBeenCalled()
     view.unmount()
     expect(mocks.dispose).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("fractal layer", () => {
+  it("derives alternating top and bottom fractals from stroke endpoints", () => {
+    const fractals = fractalsFromStrokes([
+      {
+        idx: 1, dir: "向上", start_date: "2026/07/28", end_date: "2026/07/29",
+        start_price: 9, end_price: 12, is_sure: true,
+      },
+      {
+        idx: 2, dir: "向下", start_date: "2026/07/29", end_date: "2026/07/30",
+        start_price: 12, end_price: 10, is_sure: false,
+      },
+    ])
+
+    expect(fractals).toEqual([
+      { date: "2026-07-28", price: 9, kind: "bottom", confirmed: true },
+      { date: "2026-07-29", price: 12, kind: "top", confirmed: true },
+      { date: "2026-07-30", price: 10, kind: "bottom", confirmed: false },
+    ])
   })
 })

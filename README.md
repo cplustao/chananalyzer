@@ -83,7 +83,7 @@ py -3.12 -m alembic upgrade head
 ```powershell
 py -3.12 -m pytest
 py -3.12 -m ruff check backend migrations tests
-py -3.12 -m mypy --ignore-missing-imports --follow-imports=silent backend/app/core/errors.py backend/app/core/exception_handlers.py backend/app/services/backups.py backend/app/services/structured_ai.py backend/app/services/scan_changes.py backend/app/services/data_health.py backend/app/db/migrations.py backend/app/start_local.py
+py -3.12 -m mypy --ignore-missing-imports --follow-imports=silent backend/app/core/errors.py backend/app/core/exception_handlers.py backend/app/services/backups.py backend/app/services/structured_ai.py backend/app/services/stock_analysis.py backend/app/services/stock_market_context.py backend/app/services/scan_changes.py backend/app/services/data_health.py backend/app/db/migrations.py backend/app/start_local.py
 py -3.12 -m backend.app.export_openapi
 cd frontend
 npm run generate:api
@@ -102,6 +102,8 @@ npm run test:e2e
 ## 旧系统清理
 
 v1 源码、虚拟环境、日志、旧数据库、8001 入口及一次性旧库导入器均已永久删除。主工程只保留 v2，历史结构升级统一由 Alembic 管理。
+
+功能迁移、替代和待补项以 `docs/V1_V2_FEATURE_PARITY.md` 为验收基线；旧运行栈退役不等同于旧功能自动验收通过。
 
 ## 风险提示
 

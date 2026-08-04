@@ -85,6 +85,12 @@ export function RadarPage() {
   const adjustmentCounts = methodology?.bar_adjustments ?? {}
   const position = regime.executable_position
   const positionRange = regime.position_range
+  const basePositionRange = position
+    ? { min: position.base_min ?? position.min, max: position.base_max ?? position.max }
+    : undefined
+  const riskActuallyCapped = Boolean(
+    position && position.base_band != null && position.band < position.base_band,
+  )
   const evidence = Array.isArray(item.evidence) ? item.evidence : []
   const counterEvidence = Array.isArray(item.counter_evidence)
     ? item.counter_evidence
@@ -151,9 +157,11 @@ export function RadarPage() {
         <StatCard label="市场状态" value={regime.status_label ?? "待判断"} tone={regime.status === "risk" ? "down" : regime.status === "strong" || regime.status === "warm" ? "up" : "warn"} />
         <StatCard label="环境评分" value={regime.score?.toFixed?.(1) ?? "—"} detail="满分 100" />
         <StatCard
-          label="下一交易日可执行仓位"
-          value={positionRange ? `${Math.round((positionRange.min ?? 0) * 100)}%–${Math.round((positionRange.max ?? 0) * 100)}%` : "—"}
-          detail={position ? `决策评分 MA5 ${position.decision_score.toFixed(1)}` : "等待历史序列"}
+          label="下一交易日风险调整仓位"
+          value={positionRange ? Math.round((positionRange.min ?? 0) * 100) + "%–" + Math.round((positionRange.max ?? 0) * 100) + "%" : "—"}
+          detail={position
+            ? "趋势基础 " + Math.round((position.base_min ?? position.min) * 100) + "%–" + Math.round((position.base_max ?? position.max) * 100) + "% · MA5 " + position.decision_score.toFixed(1)
+            : "等待历史序列"}
         />
         <StatCard label="有效样本" value={coverageCount ?? "—"} detail={coverage.rate ? `覆盖率 ${percent(coverage.rate)}` : "全市场覆盖"} />
       </section>
@@ -166,9 +174,24 @@ export function RadarPage() {
           </div>
           <p className="lead">{conclusion}</p>
           <div className="position-band">
-            <span>执行仓位</span>
-            <strong>{positionRange ? `${Math.round((positionRange.min ?? 0) * 100)}%–${Math.round((positionRange.max ?? 0) * 100)}%` : "—"}</strong>
+            <span>风险调整后执行仓位</span>
+            <strong>{positionRange ? Math.round((positionRange.min ?? 0) * 100) + "%–" + Math.round((positionRange.max ?? 0) * 100) + "%" : "—"}</strong>
           </div>
+          {basePositionRange ? (
+            <div className="position-band position-band-base">
+              <span>趋势基础仓位</span>
+              <strong>{Math.round(basePositionRange.min * 100) + "%–" + Math.round(basePositionRange.max * 100) + "%"}</strong>
+            </div>
+          ) : null}
+          {position && (position.risk_triggered || riskActuallyCapped) ? (
+            <div className={"position-risk risk-" + (position.risk_level ?? "caution")} role="status">
+              <AlertTriangle />
+              <div>
+                <strong>{position.risk_triggered ? (riskActuallyCapped ? "风险覆盖层已压低仓位" : "已识别风险，当前基础仓位仍低于风险上限") : "风险解除确认中，仓位正在逐档恢复"}</strong>
+                <p>{position.risk_reasons?.join("；") || position.reason}</p>
+              </div>
+            </div>
+          ) : null}
           {position ? (
             <div className="position-detail">
               <span>{position.action === "increase" ? <ArrowUp /> : position.action === "decrease" ? <ArrowDown /> : null}</span>

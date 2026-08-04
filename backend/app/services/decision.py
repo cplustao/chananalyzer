@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
 from backend.app.db.models import Job, RadarSnapshot, Watchlist, WatchlistItem
-from backend.app.domain.market_positions import build_executable_positions
+from backend.app.domain.market_positions import (
+    build_executable_positions,
+    risk_inputs_from_snapshot,
+)
 from backend.app.services.data_health import DataHealthService
 from backend.app.services.scan_changes import SCAN_KINDS, ScanChangeService
 
@@ -60,20 +63,14 @@ class DecisionService:
             self.missing.append(key)
             return None
 
-    def _review_context(
-        self, health: dict[str, Any] | None, radar: dict[str, Any] | None
-    ) -> dict[str, Any]:
+    def _review_context(self, health: dict[str, Any] | None, radar: dict[str, Any] | None) -> dict[str, Any]:
         expected = (health or {}).get("expected_trade_date")
         as_of = (radar or {}).get("trade_date")
         categories = {
-            item.get("key"): item
-            for item in (health or {}).get("categories", [])
-            if isinstance(item, dict)
+            item.get("key"): item for item in (health or {}).get("categories", []) if isinstance(item, dict)
         }
         critical_keys = ("daily_bars", "master_data", "trading_calendar")
-        blocking = [
-            key for key in critical_keys if (categories.get(key) or {}).get("status") != "fresh"
-        ]
+        blocking = [key for key in critical_keys if (categories.get(key) or {}).get("status") != "fresh"]
         if radar is None:
             return {
                 "mode": "unavailable",
@@ -103,9 +100,7 @@ class DecisionService:
             applicable_to = "\u4e0b\u4e00\u4ea4\u6613\u65e5\u5f00\u76d8\u524d"
             mode = "next_session_preparation"
         else:
-            states = [
-                str((categories.get(key) or {}).get("status", "missing")) for key in critical_keys
-            ]
+            states = [str((categories.get(key) or {}).get("status", "missing")) for key in critical_keys]
             state_rank = {"fresh": 0, "partial": 1, "stale": 2, "missing": 3}
             freshness = max(states, key=lambda state: state_rank.get(state, 3))
             if as_of != expected or radar.get("freshness") == "stale":
@@ -143,7 +138,12 @@ class DecisionService:
         ).all()
         positions = build_executable_positions(
             [
-                {"trade_date": item.trade_date.isoformat(), "score": item.score, "status": item.status}
+                {
+                    "trade_date": item.trade_date.isoformat(),
+                    "score": item.score,
+                    "status": item.status,
+                    "risk_inputs": risk_inputs_from_snapshot(item.snapshot),
+                }
                 for item in history
             ]
         )
@@ -181,7 +181,14 @@ class DecisionService:
         definitions = [
             ("advance_rate", "\u4e0a\u6da8\u5360\u6bd4", "breadth", "advance_rate", 100.0, "%"),
             ("above_ma20_rate", "\u7ad9\u4e0a MA20", "breadth", "above_ma20_rate", 100.0, "%"),
-            ("amount_yi", "\u5168\u5e02\u573a\u6210\u4ea4\u989d", "liquidity", "amount_yi", 1.0, "\u4ebf\u5143"),
+            (
+                "amount_yi",
+                "\u5168\u5e02\u573a\u6210\u4ea4\u989d",
+                "liquidity",
+                "amount_yi",
+                1.0,
+                "\u4ebf\u5143",
+            ),
             ("limit_up_count", "\u6da8\u505c\u5bb6\u6570", "limit_ecology", "limit_up_count", 1.0, "\u5bb6"),
             ("limit_down_count", "\u8dcc\u505c\u4f30\u7b97", "breadth", "limit_down_count", 1.0, "\u5bb6"),
         ]
@@ -189,9 +196,7 @@ class DecisionService:
         for key, label, group, field, factor, unit in definitions:
             current_value = (current.get(group) or {}).get(field)
             previous_value = (previous.get(group) or {}).get(field)
-            if not isinstance(current_value, (int, float)) or not isinstance(
-                previous_value, (int, float)
-            ):
+            if not isinstance(current_value, (int, float)) or not isinstance(previous_value, (int, float)):
                 continue
             current_number = round(float(current_value) * factor, 2)
             previous_number = round(float(previous_value) * factor, 2)
@@ -286,11 +291,18 @@ class DecisionService:
 
     def _attention_jobs(self) -> dict[str, Any]:
         failed = self.session.scalars(
-            select(Job).where(Job.status.in_(("partial", "failed")), Job.archived_at.is_(None)).order_by(Job.created_at.desc()).limit(8)
+            select(Job)
+            .where(Job.status.in_(("partial", "failed")), Job.archived_at.is_(None))
+            .order_by(Job.created_at.desc())
+            .limit(8)
         ).all()
         pending = self.session.scalars(
-            select(Job).where(Job.status.in_(("queued", "running")), Job.archived_at.is_(None)).order_by(Job.created_at.desc()).limit(8)
+            select(Job)
+            .where(Job.status.in_(("queued", "running")), Job.archived_at.is_(None))
+            .order_by(Job.created_at.desc())
+            .limit(8)
         ).all()
+
         def view(job: Job) -> dict[str, Any]:
             return {
                 "id": job.id,

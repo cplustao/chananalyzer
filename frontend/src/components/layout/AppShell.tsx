@@ -431,7 +431,9 @@ export function AppShell() {
     queryFn: () => api<DataHealth>("/system/data-health"),
     refetchInterval: 60_000,
   })
-  const healthStatus = health.data?.status ?? "missing"
+  const healthStatus = health.data?.status
+  const healthLabel = health.isLoading ? "检查中" : health.isError ? "检查失败" : healthLabels[healthStatus ?? "missing"]
+  const healthTone = healthStatus ?? (health.isError ? "error" : "checking")
   const unhealthyCategories = health.data?.categories.filter((item) => item.status !== "fresh") ?? []
   return (
     <TooltipProvider>
@@ -463,16 +465,23 @@ export function AppShell() {
         <div className="top-spacer" />
         <Popover>
           <PopoverTrigger asChild>
-            <Button type="button" variant="ghost" size="sm" className={`freshness data-health-indicator health-${healthStatus}`} aria-label={`数据健康：${healthLabels[healthStatus]}，点击展开具体模块`}>
-              <Gauge size={14} /><span className="hide-narrow">数据 {healthLabels[healthStatus]}</span>
+            <Button type="button" variant="ghost" size="sm" className={`freshness data-health-indicator health-${healthTone}`} aria-label={`数据健康：${healthLabel}，点击展开具体模块`}>
+              <Gauge size={14} /><span className="hide-narrow">数据 {healthLabel}</span>
             </Button>
           </PopoverTrigger>
           <PopoverContent align="end" className="data-health-popover">
             <PopoverHeader>
-              <PopoverTitle>数据健康：{healthLabels[healthStatus]}</PopoverTitle>
+              <PopoverTitle>数据健康：{healthLabel}</PopoverTitle>
               <p>总状态取所有模块中最差的一项，不代表全部数据都不可用。新股与 AI 作为独立模块单独提示。</p>
             </PopoverHeader>
-            {unhealthyCategories.length ? (
+            {health.isLoading ? (
+              <p className="health-all-fresh">正在核对交易日、行情覆盖、涨停事件和雷达快照…</p>
+            ) : health.isError ? (
+              <div className="health-query-error">
+                <p>暂时无法取得数据健康结果，这不等于数据缺失。</p>
+                <Button type="button" variant="outline" size="sm" onClick={() => void health.refetch()}>重新检查</Button>
+              </div>
+            ) : unhealthyCategories.length ? (
               <div className="health-category-list">
                 {unhealthyCategories.map((item) => (
                   <div key={item.key}>
@@ -482,7 +491,7 @@ export function AppShell() {
                 ))}
               </div>
             ) : <p className="health-all-fresh">所有核心模块均可用。</p>}
-            <Button asChild variant="outline" size="sm"><NavLink to="/settings">查看刷新建议</NavLink></Button>
+            {health.data ? <Button asChild variant="outline" size="sm"><NavLink to="/settings">查看刷新建议</NavLink></Button> : null}
           </PopoverContent>
         </Popover>
         <JobCenter />

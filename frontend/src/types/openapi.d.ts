@@ -124,6 +124,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/instruments/facets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Instrument Facets */
+        get: operations["get_instrument_facets_api_v1_instruments_facets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/instruments/{instrument_id}": {
         parameters: {
             query?: never;
@@ -186,6 +203,23 @@ export interface paths {
         put?: never;
         /** Analyze Instrument */
         post: operations["analyze_instrument_api_v1_instruments__instrument_id__analyses_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instruments/{instrument_id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Instrument */
+        post: operations["refresh_instrument_api_v1_instruments__instrument_id__refresh_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -963,6 +997,22 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** InstrumentFacetItem */
+        InstrumentFacetItem: {
+            /** Value */
+            value: string;
+            /** Count */
+            count: number;
+        };
+        /** InstrumentFacets */
+        InstrumentFacets: {
+            /** Industries */
+            industries: components["schemas"]["InstrumentFacetItem"][];
+            /** Areas */
+            areas: components["schemas"]["InstrumentFacetItem"][];
+            /** Eligible Count */
+            eligible_count: number;
+        };
         /** InstrumentPage */
         InstrumentPage: {
             /** Items */
@@ -1171,12 +1221,16 @@ export interface components {
              * @default true
              */
             exclude_st: boolean;
+            /** Min Net Mf Amount */
+            min_net_mf_amount?: number | null;
+            /** Min Main Net Amount */
+            min_main_net_amount?: number | null;
             /**
              * Rank Type
              * @default top_gainers
              * @enum {string}
              */
-            rank_type: "top_gainers" | "turnover" | "volume";
+            rank_type: "top_gainers" | "top_losers" | "top_volume" | "top_amount" | "top_turnover" | "dragon_tiger";
             /**
              * Top N
              * @default 200
@@ -1209,6 +1263,10 @@ export interface components {
              * @default true
              */
             exclude_st: boolean;
+            /** Min Net Mf Amount */
+            min_net_mf_amount?: number | null;
+            /** Min Main Net Amount */
+            min_main_net_amount?: number | null;
             /**
              * Rank Type
              * @default top_gainers
@@ -1294,6 +1352,11 @@ export interface components {
         StockAnalysisPayload: {
             /** Code */
             code: string;
+            /**
+             * Include Ai
+             * @default false
+             */
+            include_ai: boolean;
         };
         /** SystemStatus */
         SystemStatus: {
@@ -1603,6 +1666,26 @@ export interface operations {
             };
         };
     };
+    get_instrument_facets_api_v1_instruments_facets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstrumentFacets"];
+                };
+            };
+        };
+    };
     get_instrument_api_v1_instruments__instrument_id__get: {
         parameters: {
             query?: never;
@@ -1706,6 +1789,41 @@ export interface operations {
         parameters: {
             query?: {
                 force?: boolean;
+                include_ai?: boolean;
+            };
+            header?: never;
+            path: {
+                instrument_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_instrument_api_v1_instruments__instrument_id__refresh_post: {
+        parameters: {
+            query?: {
+                force?: boolean;
+                lookback_days?: number;
             };
             header?: never;
             path: {
@@ -2095,6 +2213,7 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+                algorithm_version?: string | null;
             };
             header?: never;
             path?: never;

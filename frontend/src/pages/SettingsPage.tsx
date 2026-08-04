@@ -97,10 +97,12 @@ function DataReliabilitySettings() {
   })
   const verify = useMutation({ mutationFn: (name: string) => post<BackupResult>(`/system/backups/${name}/verify`, {}) })
   const labels: Record<string, string> = { fresh: "新鲜", partial: "部分可用", stale: "已过期", missing: "缺失" }
+  const healthLabel = health.isLoading ? "检查中" : health.isError ? "检查失败" : labels[health.data?.status ?? "missing"]
+  const healthTone = health.data?.status ?? (health.isError ? "error" : "checking")
   return (
     <section className="settings-grid reliability-settings">
       <article className="panel">
-        <div className="panel-title"><span><Database size={17} />数据健康</span><Badge variant="outline" className={`status-${health.data?.status ?? "missing"}`}>{labels[health.data?.status ?? "missing"]}</Badge></div>
+        <div className="panel-title"><span><Database size={17} />数据健康</span><Badge variant="outline" className={`status-${healthTone}`}>{healthLabel}</Badge></div>
         {health.isLoading ? <LoadingPanel rows={4} /> : null}
         {health.error ? <ErrorPanel error={health.error} /> : null}
         <div className="health-list">

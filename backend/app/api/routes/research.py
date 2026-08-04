@@ -27,6 +27,8 @@ class ScanRequest(BaseModel):
     industries: list[str] = Field(default_factory=list)
     areas: list[str] = Field(default_factory=list)
     exclude_st: bool = True
+    min_net_mf_amount: float | None = None
+    min_main_net_amount: float | None = None
     rank_type: str = "top_gainers"
     top_n: int = Field(200, ge=1, le=500)
     force: bool = False

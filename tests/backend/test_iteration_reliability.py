@@ -227,6 +227,19 @@ def test_invalid_job_payload_is_rejected_before_enqueue(client, session):
     assert session.scalar(select(func.count()).select_from(Job)) == 0
 
 
+@pytest.mark.parametrize(
+    "rank_type",
+    ["top_gainers", "top_losers", "top_volume", "top_amount", "top_turnover", "dragon_tiger"],
+)
+def test_generic_job_contract_accepts_all_hot_rankings(client, rank_type):
+    response = client.post(
+        "/api/v1/jobs",
+        json={"kind": "screen.hot", "payload": {"rank_type": rank_type}},
+    )
+
+    assert response.status_code == 202
+
+
 def test_login_rate_limit_returns_429_and_retry_after(client, session):
     from backend.app.api.deps import settings_dep
     from backend.app.main import app
@@ -256,3 +269,15 @@ def test_login_rate_limit_returns_429_and_retry_after(client, session):
         assert int(limited.headers["Retry-After"]) > 0
     finally:
         app.dependency_overrides.pop(settings_dep, None)
+
+
+def test_non_retryable_job_error_stops_after_first_attempt(session):
+    job = Job(kind="market_radar.refresh", status="running", payload={}, attempts=1, max_attempts=3)
+    session.add(job)
+    session.commit()
+
+    JobRepository(session).fail(job, "前置数据落后", retryable=False)
+
+    assert job.status == "failed"
+    assert job.finished_at is not None
+    assert job.message == "任务失败"

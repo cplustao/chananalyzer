@@ -6,7 +6,7 @@ import time
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.chan_core import ChanEngine, ScanBatchOutcome, ScanSubjectOutcome
@@ -40,6 +40,9 @@ from backend.app.services.limit_up_analysis import (
 from backend.app.services.market_radar import MarketRadarService
 from backend.app.services.market_screening import HotStockService
 from backend.app.services.secrets import SecretService
+from backend.app.services.stock_analysis import StockAnalysisService
+from backend.app.services.stock_analysis import report_metadata as stock_report_metadata
+from backend.app.services.stock_market_context import StockMarketContextService
 from backend.app.services.structured_ai import GeneratedReport
 
 logger = logging.getLogger(__name__)
@@ -52,6 +55,7 @@ class JobHandlers:
         chan_engine: ChanEngine | None = None,
         ingestion_provider: HistoricalMarketDataProvider | None = None,
         ai_provider: AIProvider | None = None,
+        stock_market_context: StockMarketContextService | None = None,
         worker_instance_id: str | None = None,
     ):
         self.session = session
@@ -61,6 +65,7 @@ class JobHandlers:
         secrets = SecretService(session, settings)
         token = secrets.get("TUSHARE_TOKEN")
         self.tushare_token = token
+        self.stock_market_context = stock_market_context or StockMarketContextService(token)
         self.market_provider = HotStockService(session, tushare_token=token)
         self.ingestion_provider = ingestion_provider or build_historical_market_provider(token=token)
         providers: list[OpenAICompatibleProvider] = []
@@ -143,8 +148,19 @@ class JobHandlers:
         else:
             raw_start = payload.get("start_date")
             raw_end = payload.get("end_date")
-            end_date = date.fromisoformat(str(raw_end)) if raw_end else date.today()
-            start_date = date.fromisoformat(str(raw_start)) if raw_start else end_date
+            if raw_start or raw_end:
+                end_date = date.fromisoformat(str(raw_end)) if raw_end else date.today()
+                start_date = date.fromisoformat(str(raw_start)) if raw_start else end_date
+            else:
+                latest_open = self.session.scalar(
+                    select(func.max(TradingCalendar.trade_date)).where(
+                        TradingCalendar.is_open.is_(True),
+                        TradingCalendar.trade_date <= date.today(),
+                    )
+                )
+                if latest_open is None:
+                    raise ValueError("尚无已确认的开市日，请先刷新交易日历")
+                start_date = end_date = latest_open
             dates = list(
                 self.session.scalars(
                     select(TradingCalendar.trade_date)
@@ -219,11 +235,25 @@ class JobHandlers:
             self.jobs.complete(job, result=result, partial=True)
         return result
 
+    def _eligible_stock_codes(self, requested: list[str] | None = None) -> list[str]:
+        statement = select(Instrument.code).where(
+            Instrument.status == "active",
+            func.length(Instrument.code) == 6,
+        )
+        if requested is None:
+            return list(self.session.scalars(statement.order_by(Instrument.code)).all())
+        ordered = list(dict.fromkeys(str(code).strip() for code in requested if str(code).strip()))
+        if not ordered:
+            return []
+        eligible = set(self.session.scalars(statement.where(Instrument.code.in_(ordered))).all())
+        return [code for code in ordered if code in eligible]
+
     def _codes(self, payload: dict[str, Any]) -> list[str]:
-        codes = [str(code).strip() for code in payload.get("codes", []) if str(code).strip()]
-        if codes:
-            return codes
-        return list(self.session.scalars(select(Instrument.code).where(Instrument.status == "active")).all())
+        requested = [str(code).strip() for code in payload.get("codes", []) if str(code).strip()]
+        codes = self._eligible_stock_codes(requested if requested else None)
+        if not codes:
+            raise ValueError("没有符合条件且可扫描的规范 A 股股票")
+        return codes
 
     @staticmethod
     def _normalize_scan_outcome(
@@ -297,6 +327,31 @@ class JobHandlers:
             codes,
         )
         results = outcome.matches
+        min_net = job.payload.get("min_net_mf_amount")
+        min_main = job.payload.get("min_main_net_amount")
+        if job.kind == "screen.smart" and (min_net is not None or min_main is not None):
+            self.jobs.heartbeat(job, "正在应用个股资金流筛选", 92)
+            flow_by_code = self.market_provider.money_flow_map()
+            retained: list[dict[str, Any]] = []
+            retained_codes: set[str] = set()
+            for result in results:
+                code = str(result.get("code") or "")
+                flow = flow_by_code.get(code)
+                if flow is None:
+                    continue
+                if min_net is not None and float(flow.get("net_amount") or 0) < float(min_net):
+                    continue
+                if min_main is not None and float(flow.get("main_net_amount") or 0) < float(min_main):
+                    continue
+                result["money_flow"] = flow
+                retained.append(result)
+                retained_codes.add(code)
+            for subject in outcome.subjects:
+                if subject.status == "matched" and subject.code not in retained_codes:
+                    subject.status = "filtered"
+                    subject.result = None
+            results = retained
+            outcome.matches = retained
         self.session.execute(delete(ScanResult).where(ScanResult.job_id == job.id))
         for rank, result in enumerate(results, start=1):
             signals = result.get("signals") or []
@@ -337,10 +392,20 @@ class JobHandlers:
     def _hot_screen(self, job: Job) -> dict[str, Any]:
         rank_type = job.payload.get("rank_type", "top_gainers")
         top_n = min(500, max(1, int(job.payload.get("top_n", 200))))
-        self.jobs.heartbeat(job, "正在获取热门股票", 10)
-        stocks = self.market_provider.hot_stocks(rank_type=rank_type, top_n=top_n)
-        codes = [str(stock.get("code") or "").strip() for stock in stocks]
-        codes = [code for code in codes if code]
+        requested = [str(code).strip() for code in job.payload.get("codes", []) if str(code).strip()]
+        if requested:
+            self.jobs.heartbeat(job, "正在补跑热门股票失败项", 10)
+            codes = self._eligible_stock_codes(requested)
+            stocks = [{"code": code} for code in codes]
+        else:
+            self.jobs.heartbeat(job, "正在获取热门股票", 10)
+            stocks = self.market_provider.hot_stocks(rank_type=rank_type, top_n=top_n)
+            raw_codes = [str(stock.get("code") or "").strip() for stock in stocks]
+            codes = self._eligible_stock_codes([code for code in raw_codes if code])
+            eligible = set(codes)
+            stocks = [stock for stock in stocks if str(stock.get("code") or "").strip() in eligible]
+        if not codes:
+            raise ValueError("热门股票列表中没有符合规范 A 股范围的标的")
         instrument_ids = dict(self.session.execute(select(Instrument.code, Instrument.id)).all())
         items_by_code = self.jobs.prepare_items(job, codes, instrument_ids)
         buy_types = job.payload.get("types", ["1", "2", "3a", "3b"])
@@ -651,39 +716,123 @@ class JobHandlers:
 
     def _stock_analysis(self, job: Job) -> dict[str, Any]:
         code = str(job.payload.get("code", "")).strip()
+        include_ai = bool(job.payload.get("include_ai", False))
         if not code:
             raise ValueError("code is required")
         instrument_ids = dict(self.session.execute(select(Instrument.code, Instrument.id)).all())
         item = self.jobs.prepare_items(job, [code], instrument_ids)[code]
         existing = self.session.scalar(select(AnalysisRun).where(AnalysisRun.job_item_id == item.id))
         if existing is not None:
-            result = {"analysis_run_id": existing.id, "code": code, "analysis": existing.input_snapshot}
-            self.jobs.finish_item(job, item, {"analysis_run_id": existing.id, "code": code})
+            result = {
+                "analysis_run_id": existing.id,
+                "code": code,
+                "analysis": existing.input_snapshot,
+                "include_ai": include_ai,
+                "partial": existing.status == "partial",
+                "report_count": len(existing.reports),
+            }
+            self.jobs.finish_item(
+                job,
+                item,
+                result,
+                status="partial" if result["partial"] else "completed",
+            )
+            if result["partial"]:
+                self.jobs.complete(job, result=result, partial=True)
             return result
+
         self.jobs.start_item(job, item)
-        self.jobs.heartbeat(job, f"正在生成 {code} 缠论结构", 30)
-        logger.info("Chan structure calculation started", extra={"job_id": job.id, "instrument_code": code})
+        stage_label = "AI 研究" if include_ai else "缠论结构"
+        self.jobs.heartbeat(job, f"正在生成 {code} {stage_label}", 25)
+        logger.info(
+            "Stock analysis started",
+            extra={"job_id": job.id, "instrument_code": code, "include_ai": include_ai},
+        )
         analysis = self.chan_engine.analyze(code)
-        logger.info("Chan structure calculation completed", extra={"job_id": job.id, "instrument_code": code})
         instrument = self.session.scalar(select(Instrument).where(Instrument.code == code))
+        if instrument is None:
+            raise ValueError(f"股票 {code} 不存在")
+        algorithm_version = getattr(self.chan_engine, "algorithm_version", "chan-core-v2-memory-1")
+        reports: tuple[GeneratedReport, GeneratedReport, GeneratedReport] | None = None
+        persisted_snapshot = analysis
+        partial = False
+        if include_ai:
+            self.jobs.heartbeat(job, f"正在调用 AI 研究 {code}", 55)
+            persisted_snapshot, reports = asyncio.run(
+                StockAnalysisService(
+                    self.session,
+                    self.ai_provider,
+                    self.stock_market_context,
+                ).generate_structured_reports(
+                    analysis,
+                    instrument,
+                    algorithm_version=algorithm_version,
+                )
+            )
+            partial = not all(report.successful for report in reports)
+
+        raw_subject_date = str(analysis.get("end_date") or "").replace("/", "-")
+        try:
+            subject_date = datetime.strptime(raw_subject_date[:10], "%Y-%m-%d").date()
+        except ValueError:
+            subject_date = date.today()
         run = AnalysisRun(
             kind="stock",
-            instrument_id=instrument.id if instrument else None,
-            subject_date=date.today(),
+            instrument_id=instrument.id,
+            subject_date=subject_date,
             job_item_id=item.id,
-            status="completed",
-            algorithm_version=getattr(self.chan_engine, "algorithm_version", "chan-core-v2-memory-1"),
-            input_snapshot=analysis,
+            status="partial" if partial else "completed",
+            algorithm_version=algorithm_version,
+            config_snapshot={"include_ai": include_ai},
+            input_snapshot=persisted_snapshot,
             finished_at=datetime.now(),
         )
         self.session.add(run)
-        logger.info("Persisting Chan structure snapshot", extra={"job_id": job.id, "instrument_code": code})
+        self.session.flush()
+        if reports is not None:
+            metadata = stock_report_metadata()
+            for role, report in zip(("analyst", "review", "decision"), reports, strict=True):
+                payload = dict(report.payload or {})
+                payload["generation_metadata"] = report.generation_metadata()
+                if role == "review":
+                    payload["review_metadata"] = {"independent": report.independent_review}
+                self.session.add(
+                    AnalysisReport(
+                        analysis_run_id=run.id,
+                        role=role,
+                        content=report.markdown,
+                        structured_payload=payload,
+                        input_digest=report.input_digest,
+                        validation_status=report.validation_status,
+                        validation_error=report.validation_error,
+                        status="completed" if report.successful else "failed",
+                        provider=report.provider or metadata["provider"],
+                        model=report.model or metadata["model"],
+                        prompt_version=metadata["prompt_version"],
+                    )
+                )
         self.session.commit()
-        logger.info("Chan structure snapshot persisted", extra={"job_id": job.id, "instrument_code": code})
-        result = {"analysis_run_id": run.id, "code": code, "analysis": analysis}
-        self.jobs.finish_item(job, item, {"analysis_run_id": run.id, "code": code})
+        result = {
+            "analysis_run_id": run.id,
+            "code": code,
+            "analysis": analysis,
+            "include_ai": include_ai,
+            "partial": partial,
+            "report_count": len(reports or ()),
+        }
+        self.jobs.finish_item(
+            job,
+            item,
+            result,
+            status="partial" if partial else "completed",
+        )
+        if partial:
+            self.jobs.complete(job, result=result, partial=True)
+        logger.info(
+            "Stock analysis completed",
+            extra={"job_id": job.id, "instrument_code": code, "include_ai": include_ai},
+        )
         return result
-
     def _data_refresh(self, job: Job) -> dict[str, Any]:
         payload = job.payload or {}
         raw_start = payload.get("start_date")

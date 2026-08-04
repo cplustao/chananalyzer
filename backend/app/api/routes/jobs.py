@@ -6,7 +6,7 @@ import time
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import current_user, settings_dep
@@ -176,6 +176,23 @@ def rerun_job(
             )
         ).all()
     )
+    if failed_subjects and original.kind in {"scan.buy", "scan.sell", "screen.hot", "screen.smart"}:
+        eligible = set(
+            session.scalars(
+                select(Instrument.code).where(
+                    Instrument.status == "active",
+                    func.length(Instrument.code) == 6,
+                    Instrument.code.in_(failed_subjects),
+                )
+            ).all()
+        )
+        failed_subjects = [code for code in failed_subjects if code in eligible]
+        if not failed_subjects:
+            raise AppError(
+                "job_no_retryable_items",
+                "失败项均不属于当前规范 A 股范围，无需再次补跑",
+                status_code=409,
+            )
     if not failed_subjects and original.kind == "data.refresh":
         failed_codes = (original.result or {}).get("failed_codes", [])
         if isinstance(failed_codes, list) and failed_codes:

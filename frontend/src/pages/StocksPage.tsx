@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, BookmarkPlus, Check, RefreshCw } from "lucide-react"
+import { AlertTriangle, BookmarkPlus, Check, Database, RefreshCw, Sparkles } from "lucide-react"
 import { useSearchParams } from "react-router-dom"
 import {
   CandlestickChart,
@@ -19,6 +19,7 @@ import type {
   AnalysisPage,
   BarSeries,
   ChanStructureResponse,
+  DataHealth,
   Job,
   JobAccepted,
   Watchlist,
@@ -26,6 +27,7 @@ import type {
 
 const defaultLayers: ChanLayerVisibility = {
   bi: true,
+  fractals: true,
   segments: true,
   centers: true,
   signals: true,
@@ -34,6 +36,7 @@ const defaultLayers: ChanLayerVisibility = {
 
 const layerLabels: Array<[keyof ChanLayerVisibility, string]> = [
   ["bi", "笔"],
+  ["fractals", "分型"],
   ["segments", "线段"],
   ["centers", "中枢"],
   ["signals", "买卖点"],
@@ -42,7 +45,12 @@ const layerLabels: Array<[keyof ChanLayerVisibility, string]> = [
 
 export function StocksPage() {
   const [params, setParams] = useSearchParams()
-  const [jobId, setJobId] = useState<string | null>(null)
+  const [analysisJobId, setAnalysisJobId] = useState<string | null>(null)
+  const [refreshJobId, setRefreshJobId] = useState<string | null>(null)
+  const [analysisMode, setAnalysisMode] = useState<"chan" | "ai">("chan")
+  const [autoOpenRunId, setAutoOpenRunId] = useState<string | null>(null)
+  const [continueAiAfterRefresh, setContinueAiAfterRefresh] = useState(false)
+  const handledRefreshJobs = useRef(new Set<string>())
   const [layers, setLayers] = useState<ChanLayerVisibility>(defaultLayers)
   const requested = useRef(new Set<number>())
   const selectedId = Number(params.get("id") || 0)
@@ -50,6 +58,11 @@ export function StocksPage() {
   const watchlist = useQuery({
     queryKey: ["watchlist"],
     queryFn: () => api<Watchlist>("/watchlists/default"),
+    staleTime: 30_000,
+  })
+  const dataHealth = useQuery({
+    queryKey: ["data-health"],
+    queryFn: () => api<DataHealth>("/system/data-health"),
     staleTime: 30_000,
   })
   const bars = useQuery({
@@ -67,18 +80,42 @@ export function StocksPage() {
     queryFn: () => api<AnalysisPage>(`/analyses?kind=stock&instrument_id=${selectedId}&page_size=30`),
     enabled: selectedId > 0,
   })
-  const analyze = useMutation<JobAccepted, Error, boolean>({
-    mutationFn: (force) =>
-      post<JobAccepted>(`/instruments/${selectedId}/analyses?force=${force}`, {}),
+  const analyze = useMutation<
+    JobAccepted,
+    Error,
+    { force: boolean; includeAi: boolean }
+  >({
+    mutationFn: ({ force, includeAi }) =>
+      post<JobAccepted>(
+        `/instruments/${selectedId}/analyses?force=${force}&include_ai=${includeAi}`,
+        {},
+      ),
+    onSuccess: (accepted, variables) => {
+      setAnalysisMode(variables.includeAi ? "ai" : "chan")
+      setAnalysisJobId(accepted.job_id)
+      client.invalidateQueries({ queryKey: ["jobs"] })
+    },
+  })
+  const refreshStock = useMutation<JobAccepted, Error>({
+    mutationFn: () => post<JobAccepted>(`/instruments/${selectedId}/refresh`, {}),
     onSuccess: (accepted) => {
-      setJobId(accepted.job_id)
+      setRefreshJobId(accepted.job_id)
       client.invalidateQueries({ queryKey: ["jobs"] })
     },
   })
   const analysisJob = useQuery({
-    queryKey: ["stock-analysis-job", jobId],
-    queryFn: () => api<Job>(`/jobs/${jobId}`),
-    enabled: Boolean(jobId),
+    queryKey: ["stock-analysis-job", analysisJobId],
+    queryFn: () => api<Job>(`/jobs/${analysisJobId}`),
+    enabled: Boolean(analysisJobId),
+    refetchInterval: (query) =>
+      ["completed", "partial", "failed", "cancelled"].includes(query.state.data?.status ?? "")
+        ? false
+        : 1200,
+  })
+  const refreshJob = useQuery({
+    queryKey: ["stock-refresh-job", refreshJobId],
+    queryFn: () => api<Job>(`/jobs/${refreshJobId}`),
+    enabled: Boolean(refreshJobId),
     refetchInterval: (query) =>
       ["completed", "partial", "failed", "cancelled"].includes(query.state.data?.status ?? "")
         ? false
@@ -104,16 +141,39 @@ export function StocksPage() {
   useEffect(() => {
     if (!selectedId || !structure.isSuccess || structure.data.analysis || requested.current.has(selectedId)) return
     requested.current.add(selectedId)
-    analyze.mutate(false)
+    analyze.mutate({ force: false, includeAi: false })
   }, [analyze, selectedId, structure.data, structure.isSuccess])
 
   useEffect(() => {
     if (!["completed", "partial"].includes(analysisJob.data?.status ?? "")) return
     void client.invalidateQueries({ queryKey: ["chan-structure", selectedId] })
-  }, [analysisJob.data?.status, client, selectedId])
+    void client.invalidateQueries({ queryKey: ["analysis-history", "stock", selectedId] })
+    const runId = analysisJob.data?.result?.analysis_run_id
+    if (analysisMode === "ai" && typeof runId === "string") setAutoOpenRunId(runId)
+  }, [analysisJob.data?.result, analysisJob.data?.status, analysisMode, client, selectedId])
 
   useEffect(() => {
-    setJobId(null)
+    if (refreshJob.data?.status !== "completed" || !refreshJobId) return
+    if (handledRefreshJobs.current.has(refreshJobId)) return
+    handledRefreshJobs.current.add(refreshJobId)
+    void client.invalidateQueries({ queryKey: ["bars", selectedId] })
+    void client.invalidateQueries({ queryKey: ["data-health"] })
+    const includeAi = continueAiAfterRefresh
+    setContinueAiAfterRefresh(false)
+    analyze.mutate({ force: true, includeAi })
+  }, [analyze, client, continueAiAfterRefresh, refreshJob.data?.status, refreshJobId, selectedId])
+
+  useEffect(() => {
+    if (!continueAiAfterRefresh || !["partial", "failed", "cancelled"].includes(refreshJob.data?.status ?? "")) return
+    setContinueAiAfterRefresh(false)
+  }, [continueAiAfterRefresh, refreshJob.data?.status])
+
+  useEffect(() => {
+    setAnalysisJobId(null)
+    setRefreshJobId(null)
+    setAnalysisMode("chan")
+    setAutoOpenRunId(null)
+    setContinueAiAfterRefresh(false)
     setLayers(defaultLayers)
   }, [selectedId])
 
@@ -122,7 +182,25 @@ export function StocksPage() {
   }
   const analysis = structure.data?.analysis
   const divergences = detectChanDivergences(analysis?.bi_list ?? [])
-  const jobActive = ["queued", "running", "retrying"].includes(analysisJob.data?.status ?? "") || analyze.isPending
+  const analysisActive = ["queued", "running", "retrying"].includes(analysisJob.data?.status ?? "") || analyze.isPending
+  const refreshActive = ["queued", "running", "retrying"].includes(refreshJob.data?.status ?? "") || refreshStock.isPending
+  const selectedCode = bars.data?.instrument.code ?? ""
+  const isCanonicalStock = /^\d{6}$/.test(selectedCode)
+  const expectedTradeDate = dataHealth.data?.expected_trade_date ?? null
+  const latestBarDate = bars.data?.items.at(-1)?.bar_time.slice(0, 10) ?? null
+  const stockNeedsRefresh = Boolean(
+    isCanonicalStock && expectedTradeDate && (!latestBarDate || latestBarDate < expectedTradeDate),
+  )
+  const startAiAnalysis = () => {
+    if (!isCanonicalStock) return
+    if (stockNeedsRefresh) {
+      setAnalysisMode("ai")
+      setContinueAiAfterRefresh(true)
+      refreshStock.mutate()
+      return
+    }
+    analyze.mutate({ force: true, includeAi: true })
+  }
   const isWatched = watchlist.data?.items.some((item) => item.instrument.id === selectedId) ?? false
   const selectStock = (instrumentId: number) => setParams({ id: String(instrumentId) })
   const warmupStock = (instrumentId: number) => {
@@ -152,9 +230,31 @@ export function StocksPage() {
                 {isWatched ? <Check /> : <BookmarkPlus />}
                 {isWatched ? "已在自选" : watch.isPending ? "加入中" : "加入自选"}
               </Button>
-              <Button onClick={() => analyze.mutate(true)} disabled={jobActive}>
-                <RefreshCw className={jobActive ? "spin" : ""} />
-                {jobActive ? "计算缠论中" : "重新计算缠论"}
+              <Button
+                variant="outline"
+                onClick={() => refreshStock.mutate()}
+                disabled={!isCanonicalStock || refreshActive || analysisActive}
+                title={isCanonicalStock ? "只同步当前股票最近 30 天行情" : "历史指数或非六位个股不支持单股更新"}
+              >
+                <Database />
+                {refreshActive ? "更新本股中" : "更新本股数据"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => analyze.mutate({ force: true, includeAi: false })}
+                disabled={analysisActive || refreshActive}
+              >
+                <RefreshCw className={analysisActive && analysisMode === "chan" ? "spin" : ""} />
+                {analysisActive && analysisMode === "chan" ? "计算缠论中" : "重新计算缠论"}
+              </Button>
+              <Button
+                onClick={startAiAnalysis}
+                disabled={!isCanonicalStock || analysisActive || refreshActive}
+                title={isCanonicalStock ? "数据过期时先更新本股，再生成分析师与独立风控复核报告" : "请选择六位 A 股代码后再进行 AI 分析"}
+              >
+                <Sparkles className={(analysisActive && analysisMode === "ai") || (refreshActive && continueAiAfterRefresh) ? "spin" : ""} />
+                {refreshActive && continueAiAfterRefresh ? "????? ? " : null}
+                {analysisActive && analysisMode === "ai" ? "AI 分析中" : "AI 分析"}
               </Button>
             </>
           ) : null
@@ -185,10 +285,40 @@ export function StocksPage() {
                 tone={(bars.data.items.at(-1)?.close ?? 0) >= (bars.data.items.at(-1)?.open ?? 0) ? "up" : "down"}
               />
             </section>
+            {!isCanonicalStock ? (
+              <section className="radar-notice" role="note">
+                <AlertTriangle />
+                <div><strong>当前是历史非个股记录</strong><p>{selectedCode} 不属于规范六位 A 股代码，不能执行单股行情更新。请使用顶部搜索选择六位股票代码。</p></div>
+              </section>
+            ) : null}
             {bars.data.adjustment === "NONE" ? (
               <section className="radar-notice" role="note">
                 <AlertTriangle />
                 <div><strong>行情口径：不复权</strong><p>当前股票暂无稳定前复权数据，图表和缠论按原始日线计算；跨除权日期比较时请留意价格跳变。</p></div>
+              </section>
+            ) : null}
+            {stockNeedsRefresh ? (
+              <section className="radar-notice" role="note">
+                <AlertTriangle />
+                <div><strong>????????</strong><p>????? {latestBarDate ?? "???"}?AI ??????? {expectedTradeDate}??? AI ????????????</p></div>
+              </section>
+            ) : null}
+            {analyze.error ? (
+              <section className="radar-notice" role="alert">
+                <AlertTriangle />
+                <div><strong>AI ??????</strong><p>{analyze.error.message}</p></div>
+              </section>
+            ) : null}
+            {analysisMode === "ai" && analysisJob.data?.status === "partial" ? (
+              <section className="radar-notice" role="alert">
+                <AlertTriangle />
+                <div><strong>AI ???????</strong><p>??????????????????????????? AI ??????</p></div>
+              </section>
+            ) : null}
+            {analysisMode === "ai" && ["partial", "failed", "cancelled"].includes(refreshJob.data?.status ?? "") ? (
+              <section className="radar-notice" role="alert">
+                <AlertTriangle />
+                <div><strong>???????????? AI</strong><p>{refreshJob.data?.error ?? refreshJob.data?.message ?? "??????????????"}</p></div>
               </section>
             ) : null}
             <section className="panel">
@@ -196,7 +326,8 @@ export function StocksPage() {
                 <span>
                   价格、成交量、MACD 与缠论结构
                   {structure.data?.algorithm_version ? <Badge variant="outline">{structure.data.algorithm_version}</Badge> : null}
-                  {analysisJob.data ? <Badge variant="outline" className={`status-${analysisJob.data.status}`}>{jobStatusLabel(analysisJob.data.status)}</Badge> : null}
+                  {analysisJob.data ? <Badge variant="outline" className={`status-${analysisJob.data.status}`}>{analysisMode === "ai" ? "AI " : "缠论 "}{jobStatusLabel(analysisJob.data.status)}</Badge> : null}
+                  {refreshJob.data ? <Badge variant="outline" className={`status-${refreshJob.data.status}`}>本股更新 {jobStatusLabel(refreshJob.data.status)}</Badge> : null}
                 </span>
                 <small>{structure.data?.calculated_at ? `结构计算 ${formatDate(structure.data.calculated_at)}` : "首次打开会自动计算缠论结构"}</small>
               </div>
@@ -228,7 +359,7 @@ export function StocksPage() {
           </>
         ) : null}
       </section>
-      {selectedId > 0 ? <AnalysisHistoryPanel history={history.data} error={history.error} retry={() => history.refetch()} title="个股研究记录" /> : null}
+      {selectedId > 0 ? <AnalysisHistoryPanel history={history.data} error={history.error} retry={() => history.refetch()} title="个股研究记录" autoOpenRunId={autoOpenRunId} /> : null}
     </div>
   )
 }
