@@ -60,18 +60,35 @@ class BackupService:
         path = Path(raw)
         return (path if path.is_absolute() else PROJECT_ROOT / path).resolve()
 
-    def _path(self, name: str) -> Path:
+    @staticmethod
+    def _validate_name(name: str) -> None:
         if not _BACKUP_RE.fullmatch(name) or Path(name).name != name:
             raise AppError("invalid_backup_name", "备份文件名不合法", status_code=400)
-        path = (self.directory / name).resolve()
-        if path.parent != self.directory:
-            raise AppError("invalid_backup_path", "备份路径越界", status_code=400)
-        return path
+
+    def _safe_backup_files(self) -> list[Path]:
+        self.directory.mkdir(parents=True, exist_ok=True)
+        safe: list[Path] = []
+        for candidate in self.directory.glob("chan-backup-*.zip"):
+            resolved = candidate.resolve()
+            if (
+                _BACKUP_RE.fullmatch(candidate.name)
+                and resolved.parent == self.directory
+                and resolved.is_file()
+            ):
+                safe.append(resolved)
+        return safe
+
+    def _existing_path(self, name: str) -> Path:
+        self._validate_name(name)
+        for candidate in self._safe_backup_files():
+            if candidate.name == name:
+                return candidate
+        raise AppError("backup_not_found", "备份不存在", status_code=404)
 
     def list(self) -> list[dict[str, Any]]:
         if not self.supported:
             return []
-        self.directory.mkdir(parents=True, exist_ok=True)
+        files = self._safe_backup_files()
         self._restrict_permissions(self.directory, 0o700)
         return [
             {
@@ -79,10 +96,7 @@ class BackupService:
                 "size": path.stat().st_size,
                 "created_at": datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat(),
             }
-            for path in sorted(
-                self.directory.glob("chan-backup-*.zip"), key=lambda item: item.stat().st_mtime, reverse=True
-            )
-            if _BACKUP_RE.fullmatch(path.name)
+            for path in sorted(files, key=lambda item: item.stat().st_mtime, reverse=True)
         ]
 
     def create(self) -> dict[str, Any]:
@@ -93,7 +107,9 @@ class BackupService:
         self._restrict_permissions(self.directory, 0o700)
         timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
         name = f"chan-backup-{timestamp}-{os.urandom(4).hex()}.zip"
-        destination = self._path(name)
+        destination = (self.directory / name).resolve()
+        if destination.parent != self.directory:
+            raise AppError("invalid_backup_path", "备份路径越界", status_code=500)
         with tempfile.TemporaryDirectory(prefix="chan-backup-") as temporary:
             snapshot = Path(temporary) / "database.sqlite"
             source_connection = sqlite3.connect(source)
@@ -134,9 +150,7 @@ class BackupService:
         return {"name": name, "manifest": manifest.model_dump(), "size": destination.stat().st_size}
 
     def verify(self, name: str) -> dict[str, Any]:
-        path = self._path(name)
-        if not path.is_file():
-            raise AppError("backup_not_found", "备份不存在", status_code=404)
+        path = self._existing_path(name)
         with tempfile.TemporaryDirectory(prefix="chan-verify-") as temporary:
             database = Path(temporary) / "database.sqlite"
             with zipfile.ZipFile(path) as archive:
@@ -173,7 +187,7 @@ class BackupService:
     def restore(self, name: str) -> dict[str, Any]:
         self.verify(name)
         database = self._require_sqlite()
-        path = self._path(name)
+        path = self._existing_path(name)
         rollback = database.with_name(
             f"{database.name}.pre-restore-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
         )
@@ -213,10 +227,7 @@ class BackupService:
                 "服务器模式默认禁止通过网页下载个人研究备份",
                 status_code=403,
             )
-        path = self._path(name)
-        if not path.is_file():
-            raise AppError("backup_not_found", "备份不存在", status_code=404)
-        return path
+        return self._existing_path(name)
 
     @staticmethod
     def _restrict_permissions(path: Path, mode: int) -> None:

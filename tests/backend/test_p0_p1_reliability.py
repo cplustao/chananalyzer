@@ -531,6 +531,23 @@ def test_sqlite_backup_removes_secrets_and_verifies(session, tmp_path):
         assert connection.execute("SELECT COUNT(*) FROM secret_settings").fetchone()[0] == 0
     with pytest.raises(AppError):
         service.verify("../escape.zip")
+    with pytest.raises(AppError) as missing:
+        service.verify("chan-backup-2026-08-27T00-00-00Z-1234abcd.zip")
+    assert missing.value.code == "backup_not_found"
+
+    outside = tmp_path.parent / "chan-backup-2026-08-27T00-00-00Z-deadbeef.zip"
+    outside.write_bytes((tmp_path / created["name"]).read_bytes())
+    linked = tmp_path / outside.name
+    try:
+        linked.symlink_to(outside)
+    except OSError:
+        pass
+    else:
+        with pytest.raises(AppError) as escaped_link:
+            service.verify(linked.name)
+        assert escaped_link.value.code == "backup_not_found"
+    finally:
+        outside.unlink(missing_ok=True)
 
 
 def test_server_backup_download_requires_explicit_opt_in(tmp_path):
