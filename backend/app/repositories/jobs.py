@@ -244,6 +244,7 @@ class JobRepository:
         job.finished_at = utcnow()
         job.heartbeat_at = utcnow()
         job.message = "部分完成" if partial else "任务完成"
+        job.current_stage = None
         self.append_event(job, job.status, result)
         self.touch_worker(None, commit=False)
         self.session.commit()
@@ -251,6 +252,7 @@ class JobRepository:
     def fail(self, job: Job, error: str, *, retryable: bool = True) -> None:
         safe_error = sanitize_text(error)
         job.error = safe_error
+        job.failure_summary = safe_error
         job.heartbeat_at = utcnow()
         if retryable and job.attempts < job.max_attempts and not job.cancel_requested:
             job.status = "queued"
@@ -297,6 +299,14 @@ class JobRepository:
         if event_type not in {"stage_started", "stage_progress", "stage_completed", "stage_failed"}:
             raise ValueError(f"unsupported stage event: {event_type}")
         safe_payload = {**payload, "stage_key": stage_key}
+        job.current_stage = stage_key if event_type in {"stage_started", "stage_progress"} else None
+        checkpoint = dict(job.checkpoint or {})
+        checkpoint[stage_key] = {
+            "status": event_type.removeprefix("stage_"),
+            "updated_at": utcnow().isoformat(),
+            **{key: value for key, value in payload.items() if key in {"processed", "coverage_rate", "message"}},
+        }
+        job.checkpoint = checkpoint
         if "error" in safe_payload:
             safe_payload["error"] = sanitize_text(safe_payload["error"])
         event = self.append_event(job, event_type, safe_payload)

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.base import Base
@@ -55,6 +55,12 @@ class WatchlistItem(Base):
     instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id", ondelete="CASCADE"), index=True)
     position: Mapped[int] = mapped_column(Integer, default=0)
     note: Mapped[str | None] = mapped_column(Text)
+    thesis: Mapped[str | None] = mapped_column(Text)
+    confirmation_trigger: Mapped[str | None] = mapped_column(Text)
+    invalidation_condition: Mapped[str | None] = mapped_column(Text)
+    next_action: Mapped[str | None] = mapped_column(Text)
+    next_review_date: Mapped[date | None] = mapped_column(Date, index=True)
+    research_status: Mapped[str] = mapped_column(String(24), default="watching", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     instrument: Mapped["Instrument"] = relationship(lazy="joined")
     tags: Mapped[list["Tag"]] = relationship(secondary="watchlist_item_tags", lazy="selectin")

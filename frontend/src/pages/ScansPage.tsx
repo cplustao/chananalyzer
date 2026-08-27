@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
-import { Download, Eye, Flame, History, Play, RotateCw, Search, SlidersHorizontal, Sparkles } from "lucide-react"
+import { Download, Eye, EyeOff, Flame, History, Play, RotateCw, Search, SlidersHorizontal, Sparkles, Star } from "lucide-react"
 import { EmptyPanel, PageHeader } from "@/components/common"
 import { formatDate } from "@/lib/format-date"
 import { Badge } from "@/components/ui/badge"
@@ -15,10 +15,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { api, post } from "@/lib/api"
 import { jobKindLabel, jobStatusLabel } from "@/lib/labels"
-import type { InstrumentFacets, Job, JobAccepted, ScanHistoryItem, ScanResult } from "@/types/api"
+import type { DataHealth, InstrumentFacets, Job, JobAccepted, ScanHistoryItem, ScanResult, Watchlist } from "@/types/api"
 
 const signalLabels: Record<string, string> = {
   "1": "一类",
@@ -43,6 +44,20 @@ function splitValues(value: string) {
 }
 
 type FacetItem = InstrumentFacets["industries"][number]
+const IGNORED_RESULTS_STORAGE_KEY = "chan-screen-ignored-v1"
+
+function readIgnoredResults() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(IGNORED_RESULTS_STORAGE_KEY) || "null") as unknown
+    if (!parsed || typeof parsed !== "object") return []
+    const value = parsed as { version?: unknown; keys?: unknown }
+    return value.version === 1 && Array.isArray(value.keys)
+      ? value.keys.filter((item): item is string => typeof item === "string").slice(-500)
+      : []
+  } catch {
+    return []
+  }
+}
 
 function FacetPicker({
   label,
@@ -55,18 +70,21 @@ function FacetPicker({
   selected: string[]
   onChange: (values: string[]) => void
 }) {
+  const [query, setQuery] = useState("")
+  const visible = items.filter((item) => item.value.toLowerCase().includes(query.trim().toLowerCase()))
+  const toggle = (value: string) => onChange(selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value])
   return (
-    <label>
-      <span>{label}{selected.length ? `（已选 ${selected.length}）` : ""}</span>
-      <select
-        multiple
-        className="facet-select"
-        value={selected}
-        onChange={(event) => onChange(Array.from(event.currentTarget.selectedOptions, (option) => option.value))}
-      >
-        {items.map((item) => <option key={item.value} value={item.value}>{item.value}（{item.count}）</option>)}
-      </select>
-    </label>
+    <div className="facet-picker">
+      <span>{label}</span>
+      <Popover>
+        <PopoverTrigger asChild><Button type="button" variant="outline" aria-label={`选择${label}`}>{selected.length ? `已选 ${selected.length} 项` : `选择${label}`}</Button></PopoverTrigger>
+        <PopoverContent className="facet-popover" align="start">
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`搜索${label}`} />
+          <div className="facet-options">{visible.map((item) => <button key={item.value} type="button" aria-pressed={selected.includes(item.value)} onClick={() => toggle(item.value)}><span>{item.value}</span><small>{item.count}</small></button>)}</div>
+          {selected.length ? <Button type="button" variant="ghost" size="sm" onClick={() => onChange([])}>清空选择</Button> : null}
+        </PopoverContent>
+      </Popover>
+    </div>
   )
 }
 
@@ -85,6 +103,8 @@ export function ScansPage({ screener = false }: { screener?: boolean }) {
   const [types, setTypes] = useState<string[]>(["1", "2", "3a", "3b"])
   const [resultFilter, setResultFilter] = useState("")
   const [selectedResult, setSelectedResult] = useState<ScanResult | null>(null)
+  const [preset, setPreset] = useState("balanced")
+  const [ignoredResults, setIgnoredResults] = useState<string[]>(readIgnoredResults)
   const client = useQueryClient()
   const history = useQuery({
     queryKey: ["scan-history"],
@@ -96,6 +116,23 @@ export function ScansPage({ screener = false }: { screener?: boolean }) {
     queryFn: () => api<InstrumentFacets>("/instruments/facets"),
     staleTime: 10 * 60 * 1000,
   })
+  const health = useQuery({ queryKey: ["data-health"], queryFn: () => api<DataHealth>("/system/data-health"), staleTime: 30_000 })
+  const applyPreset = (value: string) => {
+    setPreset(value)
+    if (value === "conservative") { setRankType("top_amount"); setTypes(["2", "3b"]); setExcludeSt(true) }
+    else if (value === "aggressive") { setRankType("top_gainers"); setTypes(["1", "1p", "2", "3a", "3b"]); setExcludeSt(true) }
+    else { setRankType("top_amount"); setTypes(["2", "3a", "3b"]); setExcludeSt(true) }
+  }
+  const addWatch = useMutation({
+    mutationFn: (instrumentId: number) => post<Watchlist>("/watchlists/default/items", { instrument_id: instrumentId, research_status: "pending", tag_names: ["筛选候选"] }),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["watchlist"] }),
+  })
+  const ignore = (result: ScanResult) => {
+    const key = `${result.code}-${result.signal_date ?? ""}`
+    const next = Array.from(new Set([...ignoredResults, key])).slice(-500)
+    setIgnoredResults(next)
+    localStorage.setItem(IGNORED_RESULTS_STORAGE_KEY, JSON.stringify({ version: 1, keys: next }))
+  }
   const effectiveSide = mode === "buy" || mode === "sell" ? mode : mode === "hot" ? "buy" : scanSide
   const toggleType = (type: string) => {
     setTypes((current) =>
@@ -139,12 +176,12 @@ export function ScansPage({ screener = false }: { screener?: boolean }) {
   const filteredResults = useMemo(() => {
     const keyword = resultFilter.trim().toLowerCase()
     if (!keyword) return results.data ?? []
-    return (results.data ?? []).filter((item) =>
+    return (results.data ?? []).filter((item) => !ignoredResults.includes(`${item.code}-${item.signal_date ?? ""}`) &&
       [item.code, item.name, item.signal_type, item.scan_kind].some((value) =>
         String(value ?? "").toLowerCase().includes(keyword),
       ),
     )
-  }, [resultFilter, results.data])
+  }, [ignoredResults, resultFilter, results.data])
   const exportResults = () => {
     if (!filteredResults.length) return
     const rows = [
@@ -183,6 +220,8 @@ export function ScansPage({ screener = false }: { screener?: boolean }) {
         help={screener ? "market-screening" : "chan-scanner"}
       />
       <section className="panel filter-panel">
+        {screener ? <div className="screener-readiness" role="status"><span>数据日期 {health.data?.as_of_trade_date ?? health.data?.expected_trade_date ?? "—"}</span><span>预计耗时：热门约 2–8 分钟，智能全市场约 15–40 分钟</span><Badge variant="outline" className={`status-${health.data?.decision_usable ? "fresh" : "stale"}`}>{health.data?.decision_usable ? "前置数据就绪" : "前置数据未就绪"}</Badge></div> : null}
+        {screener ? <div className="preset-picker" aria-label="筛选预设">{[["conservative", "保守"], ["balanced", "均衡"], ["aggressive", "进取"]].map(([value, label]) => <Button key={value} type="button" size="sm" variant={preset === value ? "default" : "outline"} aria-pressed={preset === value} onClick={() => applyPreset(value)}>{label}</Button>)}</div> : null}
         <Tabs value={mode} onValueChange={setMode}>
           <TabsList>
             {modes.map((item) => (
@@ -234,13 +273,13 @@ export function ScansPage({ screener = false }: { screener?: boolean }) {
                 </Select>
               </label>
               <FacetPicker
-                label="行业（按 Ctrl/Cmd 可多选）"
+                label="行业"
                 items={facets.data?.industries ?? []}
                 selected={industries}
                 onChange={setIndustries}
               />
               <FacetPicker
-                label="地区（按 Ctrl/Cmd 可多选）"
+                label="地区"
                 items={facets.data?.areas ?? []}
                 selected={areas}
                 onChange={setAreas}
@@ -293,7 +332,7 @@ export function ScansPage({ screener = false }: { screener?: boolean }) {
         ) : null}
         <div className="scan-submit-row">
           <p className="muted">重复条件会复用活动任务；执行进度和失败明细可在右上角任务中心查看。</p>
-          <Button onClick={() => submit.mutate()} disabled={submit.isPending || types.length === 0}>
+          <Button onClick={() => submit.mutate()} disabled={submit.isPending || types.length === 0 || (screener && !health.data?.decision_usable)} title={screener && !health.data?.decision_usable ? health.data?.recommended_action ?? "请先完成今日数据准备" : undefined}>
             <Play />{submit.isPending ? "正在提交" : "开始任务"}
           </Button>
         </div>
@@ -364,7 +403,7 @@ export function ScansPage({ screener = false }: { screener?: boolean }) {
                     <td><Badge variant="outline">{result.signal_type ?? result.scan_kind}</Badge></td>
                     <td>{result.signal_date ?? "—"}</td>
                     <td>{result.score?.toFixed(2) ?? "—"}</td>
-                    <td><Button type="button" variant="ghost" size="sm" onClick={() => setSelectedResult(result)}><Eye size={14} />查看详情</Button></td>
+                    <td><div className="row-actions"><Button type="button" variant="ghost" size="sm" onClick={() => setSelectedResult(result)}><Eye size={14} />证据</Button>{result.instrument_id ? <><Button asChild variant="ghost" size="sm"><Link to={`/stocks?id=${result.instrument_id}`}>研究</Link></Button><Button type="button" variant="ghost" size="sm" onClick={() => addWatch.mutate(result.instrument_id!)}><Star size={14} />自选</Button></> : null}<Button type="button" variant="ghost" size="sm" onClick={() => ignore(result)}><EyeOff size={14} />忽略</Button></div></td>
                   </tr>
                 ))}
               </tbody>

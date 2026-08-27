@@ -27,6 +27,7 @@ from backend.app.providers.ai import AIProvider, AIProviderChain, OpenAICompatib
 from backend.app.providers.market_data import HistoricalMarketDataProvider, build_historical_market_provider
 from backend.app.repositories.jobs import JobRepository
 from backend.app.services.chan_analysis import DatabaseChanEngine
+from backend.app.services.data_health import DataHealthService
 from backend.app.services.event_ingestion import EventIngestionService
 from backend.app.services.ingestion import IngestionService
 from backend.app.services.ipo_analysis import IpoAnalysisService
@@ -110,6 +111,7 @@ class JobHandlers:
             "ipo.analyze": self._ipo_analysis,
             "stock.analyze": self._stock_analysis,
             "data.refresh": self._data_refresh,
+            "daily.prepare": self._daily_prepare,
         }
         handler = handlers.get(job.kind)
         if handler is None:
@@ -129,6 +131,8 @@ class JobHandlers:
                 error=str(exc),
             )
             raise
+        if job.kind in {"data.refresh", "limit_up.refresh", "market_radar.refresh"}:
+            DataHealthService(self.session, get_settings()).refresh_cache(record_sample=False)
         self.jobs.append_stage_event(
             job,
             "stage_completed",
@@ -139,6 +143,101 @@ class JobHandlers:
             duration_ms=round((time.monotonic() - started) * 1000),
         )
         return result
+
+    def _daily_prepare(self, job: Job) -> dict[str, Any]:
+        payload = dict(job.payload or {})
+        completed = {
+            key for key, value in (job.checkpoint or {}).items()
+            if isinstance(value, dict) and value.get("status") == "completed"
+        }
+        results: dict[str, Any] = {}
+
+        def stage(key: str, callback, *, resume: bool = True):
+            if resume and key in completed:
+                return {"status": "resumed", "reason": "checkpoint_completed"}
+            started = time.monotonic()
+            self.jobs.append_stage_event(job, "stage_started", key, message=f"开始{key}")
+            try:
+                value = callback()
+            except Exception as exc:
+                self.jobs.append_stage_event(
+                    job, "stage_failed", key,
+                    duration_ms=round((time.monotonic() - started) * 1000), error=str(exc),
+                )
+                raise
+            self.jobs.append_stage_event(
+                job, "stage_completed", key,
+                duration_ms=round((time.monotonic() - started) * 1000),
+                coverage_rate=float(value.get("coverage_rate", 1.0)) if isinstance(value, dict) else 1.0,
+            )
+            return value
+
+        refresh_payload = {
+            "lookback_days": int(payload.get("lookback_days") or 10),
+            "adjustment": "QFQ",
+            "timeframe": "DAY",
+            "refresh_master_data": True,
+        }
+        original_payload = job.payload
+        job.payload = refresh_payload
+        try:
+            results["market_data"] = stage("market_data", lambda: self._data_refresh(job))
+        finally:
+            job.payload = original_payload
+        if job.status != "running":
+            return {"status": job.status, "stages": results, "blocking_stage": "market_data"}
+
+        def verify_core() -> dict[str, Any]:
+            snapshot = DataHealthService(self.session, get_settings()).snapshot()
+            categories = {item["key"]: item for item in snapshot["categories"]}
+            blocking = [key for key in ("master_data", "daily_bars", "trading_calendar") if categories[key]["status"] != "fresh"]
+            if blocking or "unit_contract" in snapshot.get("blocking_reasons", []):
+                raise ValueError(f"行情质量门禁未通过：{', '.join(blocking or ['unit_contract'])}")
+            return {"coverage_rate": categories["daily_bars"].get("coverage_rate", 0), "blocking": []}
+
+        results["quality_gate"] = stage("quality_gate", verify_core)
+        results["limit_up"] = stage("limit_up", lambda: self._limit_up_refresh(job))
+        if job.status != "running":
+            return {"status": job.status, "stages": results, "blocking_stage": "limit_up"}
+        results["market_radar"] = stage("market_radar", lambda: self._market_radar(job))
+        if job.status != "running":
+            return {"status": job.status, "stages": results, "blocking_stage": "market_radar"}
+
+        health = stage(
+            "decision_readiness",
+            lambda: DataHealthService(self.session, get_settings()).refresh_cache(record_sample=True),
+            resume=False,
+        )
+        results["decision_readiness"] = health
+        if not health.get("decision_usable"):
+            raise ValueError("决策可用性门禁未通过：" + ", ".join(health.get("blocking_reasons") or []))
+
+        queued: list[str] = []
+        if bool(payload.get("run_screeners")):
+            preset = str(payload.get("screening_preset") or "balanced")
+            preset_types = {
+                "conservative": ["2", "3b"],
+                "balanced": ["2", "3a", "3b"],
+                "aggressive": ["1", "1p", "2", "3a", "3b"],
+            }.get(preset, ["2", "3a", "3b"])
+            for kind, child_payload in (
+                ("screen.hot", {"rank_type": "top_amount", "top_n": 200, "types": preset_types, "scan_side": "buy"}),
+                ("screen.smart", {"types": preset_types, "scan_side": "buy", "exclude_st": True}),
+            ):
+                child, _ = self.jobs.create(kind, child_payload, job.requested_by, False, job.max_attempts)
+                queued.append(child.id)
+        daily_health = next(
+            (item for item in health.get("categories", []) if item.get("key") == "daily_bars"),
+            {},
+        )
+        return {
+            "status": "completed",
+            "current_stage": None,
+            "stages": results,
+            "coverage_rate": daily_health.get("coverage_rate", 0),
+            "decision_usable": True,
+            "queued_screening_jobs": queued,
+        }
 
     def _limit_up_refresh(self, job: Job) -> dict[str, Any]:
         payload = job.payload or {}
@@ -226,7 +325,7 @@ class JobHandlers:
         self.jobs.heartbeat(job, "v2 市场雷达快照已生成", 95)
         result = {
             "trade_date": snapshot["trade_date"],
-            "algorithm_version": "2.0",
+            "algorithm_version": snapshot.get("algorithm_version", "2.1"),
             "freshness": snapshot.get("freshness", "partial"),
             "coverage_rate": (snapshot.get("coverage") or {}).get("rate", 0.0),
             "snapshot": snapshot,
@@ -843,19 +942,34 @@ class JobHandlers:
         lookback_days = max(1, min(3650, int(payload.get("lookback_days") or 10)))
         service = IngestionService(self.session, self.ingestion_provider)
         progress_started_at = time.monotonic()
+        previous_report_at = progress_started_at
+        previous_report_count = 0
+        recent_rates: list[float] = []
 
         def cancelled() -> bool:
             self.session.refresh(job)
             return bool(job.cancel_requested)
 
         def progress(current: int, total: int, code: str) -> None:
+            nonlocal previous_report_at, previous_report_count
             job.total = total
             job.completed = current
             report_interval = max(1, min(25, total // 100))
             if current == total or current <= 3 or current % report_interval == 0:
-                elapsed = max(0.001, time.monotonic() - progress_started_at)
-                rate_per_minute = current / elapsed * 60
-                remaining_seconds = (total - current) / max(current / elapsed, 0.001)
+                now = time.monotonic()
+                elapsed = max(0.001, now - progress_started_at)
+                interval_elapsed = max(0.001, now - previous_report_at)
+                interval_count = max(0, current - previous_report_count)
+                if interval_count:
+                    recent_rates.append(interval_count / interval_elapsed)
+                    del recent_rates[:-5]
+                rate_per_second = (
+                    sum(recent_rates) / len(recent_rates)
+                    if recent_rates
+                    else current / elapsed
+                )
+                rate_per_minute = rate_per_second * 60
+                remaining_seconds = (total - current) / max(rate_per_second, 0.001)
                 remaining_minutes = max(0, int((remaining_seconds + 59) // 60))
                 hours, minutes = divmod(remaining_minutes, 60)
                 eta = f"{hours}小时{minutes}分钟" if hours else f"{minutes}分钟"
@@ -867,6 +981,8 @@ class JobHandlers:
                     ),
                     current / max(1, total) * 95,
                 )
+                previous_report_at = now
+                previous_report_count = current
 
         should_refresh_master = bool(payload.get("refresh_master_data", codes is None))
         if should_refresh_master:

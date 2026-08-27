@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import Settings
 from backend.app.db.models import (
     Bar,
+    DataHealthSnapshot,
+    DataReliabilitySample,
     IngestionRun,
     Instrument,
     IpoEvent,
@@ -63,14 +65,115 @@ class DataHealthService:
             key=lambda value: _STATE_RANK[value],
         )
         backend = self.session.get_bind().dialect.name
+        blocking_categories = [
+            item for item in categories
+            if item["affects_overall"] and item["status"] != "fresh"
+        ]
+        unit_anomalies = int(
+            self.session.scalar(
+                select(func.count()).select_from(Bar).where(
+                    or_(
+                        Bar.unit_contract_version != "cn-equity-v1",
+                        Bar.quality_status == "quarantined",
+                    )
+                )
+            )
+            or 0
+        )
+        if unit_anomalies:
+            overall = "stale"
+        eligible_count = next(
+            (item.get("eligible_count") for item in categories if item["key"] == "daily_bars"),
+            None,
+        )
+        latest_full_run = self.session.scalar(
+            select(IngestionRun)
+            .where(
+                IngestionRun.kind == "bars",
+                IngestionRun.status == "completed",
+                IngestionRun.coverage_rate >= self.settings.radar_min_current_coverage,
+                IngestionRun.total >= max(1, int((eligible_count or 0) * 0.95)),
+            )
+            .order_by(IngestionRun.finished_at.desc())
+        )
+        provider_summary = self._provider_summary(latest_full_run)
+        blocking_reasons = [item["key"] for item in blocking_categories]
+        if unit_anomalies:
+            blocking_reasons.append("unit_contract")
+        decision_usable = not blocking_reasons
+        recommendation = next(
+            (item.get("recommendation") for item in blocking_categories if item.get("recommendation")),
+            None,
+        )
+        if unit_anomalies:
+            recommendation = "存在单位未知或被隔离的行情，请重新拉取对应序列后再生成决策结论。"
         return {
             "status": overall,
             "checked_at": utcnow().isoformat(),
             "expected_trade_date": expected_trade_date.isoformat() if expected_trade_date else None,
+            "decision_usable": decision_usable,
+            "as_of_trade_date": expected_trade_date.isoformat() if decision_usable and expected_trade_date else None,
+            "last_full_refresh": latest_full_run.finished_at.isoformat() if latest_full_run and latest_full_run.finished_at else None,
+            "blocking_reasons": blocking_reasons,
+            "provider_summary": provider_summary,
+            "recommended_action": recommendation,
             "database_backend": backend,
             "backup_mode": "application" if backend == "sqlite" else "external_required",
             "categories": categories,
         }
+
+    @staticmethod
+    def _provider_summary(run: IngestionRun | None) -> dict[str, Any]:
+        if run is None:
+            return {}
+        summary: dict[str, dict[str, int]] = {}
+        for attempt in run.provider_chain or []:
+            provider = str(attempt.get("provider") or "unknown")
+            status = str(attempt.get("status") or "unknown")
+            bucket = summary.setdefault(provider, {"accepted": 0, "rejected": 0, "skipped": 0, "rows": 0, "latency_ms": 0, "rate_limited": 0})
+            if status in bucket:
+                bucket[status] += 1
+            bucket["rows"] += int(attempt.get("row_count") or 0)
+            bucket["latency_ms"] += int(attempt.get("latency_ms") or 0)
+            error_text = str(attempt.get("error") or "").lower()
+            if "rate limit" in error_text or "频率" in error_text or "too many requests" in error_text:
+                bucket["rate_limited"] += 1
+        for bucket in summary.values():
+            attempts = bucket["accepted"] + bucket["rejected"]
+            bucket["success_rate"] = bucket["accepted"] / attempts if attempts else 0.0
+            bucket["fallback_or_circuit_count"] = bucket["rejected"] + bucket["skipped"]
+        return {"run_id": run.id, "providers": summary, "coverage_rate": run.coverage_rate}
+
+    def cached_snapshot(self, max_age_seconds: int = 300) -> dict[str, Any]:
+        cached = self.session.get(DataHealthSnapshot, "current")
+        if cached and cached.generated_at >= utcnow() - timedelta(seconds=max_age_seconds):
+            return dict(cached.payload or {})
+        return self.refresh_cache(record_sample=False)
+
+    def refresh_cache(self, *, record_sample: bool = False) -> dict[str, Any]:
+        payload = self.snapshot()
+        cached = self.session.get(DataHealthSnapshot, "current")
+        if cached is None:
+            cached = DataHealthSnapshot(key="current")
+            self.session.add(cached)
+        cached.payload = payload
+        cached.generated_at = utcnow()
+        if record_sample:
+            daily = next((item for item in payload["categories"] if item["key"] == "daily_bars"), {})
+            self.session.add(
+                DataReliabilitySample(
+                    trade_date=date.fromisoformat(payload["expected_trade_date"])
+                    if payload.get("expected_trade_date")
+                    else None,
+                    decision_usable=bool(payload["decision_usable"]),
+                    coverage_rate=daily.get("coverage_rate"),
+                    status=str(payload["status"]),
+                    provider_summary=payload.get("provider_summary"),
+                    blocking_reasons=payload.get("blocking_reasons"),
+                )
+            )
+        self.session.commit()
+        return payload
 
     def _expected_trade_date(self, now: datetime | None = None) -> date | None:
         return expected_trade_date(self.session, now)

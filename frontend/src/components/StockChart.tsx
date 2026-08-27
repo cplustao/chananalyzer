@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { ECharts } from "echarts/core"
 import type { Bar, ChanAnalysis, ChanLine } from "@/types/api"
 import { normalizeTradingDate } from "@/lib/trading-date"
@@ -56,9 +56,11 @@ export function CandlestickChart({
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const chartRef = useRef<ECharts | null>(null)
+  const [chartError, setChartError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
+    setChartError(null)
     void import("@/lib/stock-charts").then(({ echarts }) => {
       if (cancelled || !ref.current) return
       const created = chartRef.current === null
@@ -314,6 +316,8 @@ export function CandlestickChart({
         ],
       }
       chart.setOption(option, { notMerge: false, lazyUpdate: true, replaceMerge: ["series"] })
+    }).catch((error: unknown) => {
+      if (!cancelled) setChartError(error instanceof Error ? error.message : "图表组件加载失败")
     })
 
     return () => { cancelled = true }
@@ -330,6 +334,9 @@ export function CandlestickChart({
     }
   }, [])
 
+  if (chartError) {
+    return <div className="empty-chart" role="alert">图表暂时无法显示：{chartError}</div>
+  }
   return (
     <div
       ref={ref}

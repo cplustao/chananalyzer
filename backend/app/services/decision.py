@@ -25,7 +25,7 @@ class DecisionService:
         self.missing: list[str] = []
 
     def today(self) -> dict[str, Any]:
-        health = self._safe("data_health", lambda: DataHealthService(self.session, self.settings).snapshot())
+        health = self._safe("data_health", lambda: DataHealthService(self.session, self.settings).cached_snapshot())
         radar = self._safe("market_radar", self._radar)
         review_context = self._review_context(health, radar)
         if radar:

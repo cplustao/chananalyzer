@@ -28,7 +28,13 @@ def add_watchlist_item(
 ) -> WatchlistView:
     try:
         item = WatchlistRepository(session).add_item(
-            user.id, payload.instrument_id, payload.note, payload.tag_names
+            user.id, payload.instrument_id, payload.note, payload.tag_names,
+            thesis=payload.thesis,
+            confirmation_trigger=payload.confirmation_trigger,
+            invalidation_condition=payload.invalidation_condition,
+            next_action=payload.next_action,
+            next_review_date=payload.next_review_date,
+            research_status=payload.research_status,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -44,7 +50,13 @@ def update_watchlist_item(
 ) -> WatchlistView:
     try:
         watchlist = WatchlistRepository(session).update_item(
-            user.id, item_id, payload.note, payload.tag_names, payload.position
+            user.id, item_id, payload.note, payload.tag_names, payload.position,
+            thesis=payload.thesis,
+            confirmation_trigger=payload.confirmation_trigger,
+            invalidation_condition=payload.invalidation_condition,
+            next_action=payload.next_action,
+            next_review_date=payload.next_review_date,
+            research_status=payload.research_status,
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

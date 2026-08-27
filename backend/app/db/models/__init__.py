@@ -18,10 +18,20 @@ from backend.app.db.models.identity import (
     WatchlistItemTag,
 )
 from backend.app.db.models.jobs import Job, JobEvent, JobItem, WorkerHeartbeat
-from backend.app.db.models.market import Bar, DataSource, Industry, IngestionRun, Instrument, TradingCalendar
+from backend.app.db.models.market import (
+    Bar,
+    DataHealthSnapshot,
+    DataReliabilitySample,
+    DataSource,
+    Industry,
+    IngestionRun,
+    Instrument,
+    TradingCalendar,
+)
 
 __all__ = [
-    "AnalysisReport", "AnalysisRun", "AutomationSchedule", "AuthSession", "Bar", "DataSource",
+    "AnalysisReport", "AnalysisRun", "AutomationSchedule", "AuthSession", "Bar", "DataHealthSnapshot",
+    "DataReliabilitySample", "DataSource",
     "Industry", "IngestionRun", "Instrument", "IpoEvent", "Job", "JobEvent", "JobItem", "WorkerHeartbeat",
     "LimitUpEvent", "LimitUpMetric", "RadarSnapshot", "ScanResult", "SecretSetting", "Tag",
     "TradingCalendar", "User", "Watchlist", "WatchlistItem", "WatchlistItemTag",

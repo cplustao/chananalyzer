@@ -12,17 +12,19 @@ const watchlist: Watchlist = {
   items: [
     {
       id: "watch-1",
-      instrument: { id: 1, code: "600519", ts_code: null, exchange: null, name: "贵州茅台", area: null, status: "listed" },
+      instrument: { id: 1, code: "600519", ts_code: null, exchange: null, name: "贵州茅台", area: null, status: "listed", asset_type: "stock" },
       position: 1,
       note: "等待日线三买确认",
       tags: ["核心观察"],
+      research_status: "watching",
     },
     {
       id: "watch-2",
-      instrument: { id: 2, code: "000997", ts_code: null, exchange: null, name: "新大陆", area: null, status: "listed" },
+      instrument: { id: 2, code: "000997", ts_code: null, exchange: null, name: "新大陆", area: null, status: "listed", asset_type: "stock" },
       position: 2,
       note: null,
       tags: [],
+      research_status: "watching",
     },
   ],
 }

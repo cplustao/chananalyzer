@@ -33,7 +33,12 @@ class WatchlistRepository:
             tags.append(tag)
         return tags
 
-    def add_item(self, user_id: str, instrument_id: int, note: str | None, tag_names: list[str]) -> Watchlist:
+    def add_item(
+        self, user_id: str, instrument_id: int, note: str | None, tag_names: list[str],
+        *, thesis: str | None = None, confirmation_trigger: str | None = None,
+        invalidation_condition: str | None = None, next_action: str | None = None,
+        next_review_date=None, research_status: str = "watching",
+    ) -> Watchlist:
         if self.session.get(Instrument, instrument_id) is None:
             raise ValueError("股票不存在")
         watchlist = self.get_default(user_id)
@@ -49,6 +54,12 @@ class WatchlistRepository:
                 instrument_id=instrument_id,
                 position=len(watchlist.items),
                 note=note,
+                thesis=thesis,
+                confirmation_trigger=confirmation_trigger,
+                invalidation_condition=invalidation_condition,
+                next_action=next_action,
+                next_review_date=next_review_date,
+                research_status=research_status,
             )
             item.tags = self._tags(user_id, tag_names)
             self.session.add(item)
@@ -57,6 +68,17 @@ class WatchlistRepository:
                 item.note = note
             if tag_names:
                 item.tags = self._tags(user_id, tag_names)
+            for key, value in {
+                "thesis": thesis,
+                "confirmation_trigger": confirmation_trigger,
+                "invalidation_condition": invalidation_condition,
+                "next_action": next_action,
+                "next_review_date": next_review_date,
+            }.items():
+                if value is not None:
+                    setattr(item, key, value)
+            if research_status != "watching":
+                item.research_status = research_status
         self.session.commit()
         return self.get_default(user_id)
 
@@ -67,6 +89,13 @@ class WatchlistRepository:
         note: str | None,
         tag_names: list[str],
         position: int | None = None,
+        *,
+        thesis: str | None = None,
+        confirmation_trigger: str | None = None,
+        invalidation_condition: str | None = None,
+        next_action: str | None = None,
+        next_review_date=None,
+        research_status: str = "watching",
     ) -> Watchlist:
         watchlist = self.get_default(user_id)
         item = self.session.scalar(
@@ -79,6 +108,12 @@ class WatchlistRepository:
             raise ValueError("自选股记录不存在")
         item.note = note
         item.tags = self._tags(user_id, tag_names)
+        item.thesis = thesis
+        item.confirmation_trigger = confirmation_trigger
+        item.invalidation_condition = invalidation_condition
+        item.next_action = next_action
+        item.next_review_date = next_review_date
+        item.research_status = research_status
         if position is not None:
             item.position = position
         self.session.commit()

@@ -22,6 +22,8 @@ class MarketBar:
     volume: float
     amount: float | None = None
     turnover_rate: float | None = None
+    raw_volume: float | None = None
+    raw_amount: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +42,7 @@ class InstrumentRecord:
     industry: str | None = None
     list_date: date | None = None
     status: str = "active"
+    asset_type: str = "stock"
 
 
 class HistoricalMarketDataProvider(Protocol):
@@ -227,6 +230,8 @@ class TushareMarketDataProvider:
             if not raw_date:
                 continue
             bar_time = datetime.strptime(raw_date.replace("-", "")[:8], "%Y%m%d")
+            raw_volume = float(record.get("vol") or record.get("volume") or 0)
+            raw_amount = _optional_float(record.get("amount"))
             bars.append(
                 MarketBar(
                     bar_time=bar_time,
@@ -234,9 +239,11 @@ class TushareMarketDataProvider:
                     high=float(record["high"]),
                     low=float(record["low"]),
                     close=float(record["close"]),
-                    volume=float(record.get("vol") or record.get("volume") or 0),
-                    amount=_optional_float(record.get("amount")),
+                    volume=raw_volume * 100.0,
+                    amount=raw_amount * 1000.0 if raw_amount is not None else None,
                     turnover_rate=_optional_float(record.get("turnover_rate")),
+                    raw_volume=raw_volume,
+                    raw_amount=raw_amount,
                 )
             )
         bars.sort(key=lambda item: item.bar_time)
@@ -285,6 +292,7 @@ class ProviderAttempt:
     status: str
     error: str | None = None
     row_count: int = 0
+    latency_ms: int = 0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -292,6 +300,7 @@ class ProviderAttempt:
             "status": self.status,
             "error": self.error,
             "row_count": self.row_count,
+            "latency_ms": self.latency_ms,
         }
 
 
@@ -419,6 +428,8 @@ class BaoStockMarketDataProvider:
         bars: list[MarketBar] = []
         while result.next():
             row = result.get_row_data()
+            raw_volume = float(row[5] or 0)
+            raw_amount = _optional_float(row[6])
             bars.append(
                 MarketBar(
                     bar_time=datetime.strptime(row[0], "%Y-%m-%d"),
@@ -426,8 +437,8 @@ class BaoStockMarketDataProvider:
                     high=float(row[2]),
                     low=float(row[3]),
                     close=float(row[4]),
-                    volume=float(row[5] or 0),
-                    amount=_optional_float(row[6]),
+                    volume=raw_volume,
+                    amount=raw_amount,
                     turnover_rate=_optional_float(row[7]),
                 )
             )
@@ -503,19 +514,23 @@ class AkShareMarketDataProvider:
                 adjust="" if adjustment_key == "NONE" else adjustment_key.lower(),
             )
             if frame is not None and not frame.empty:
-                return [
-                    MarketBar(
+                bars: list[MarketBar] = []
+                for row in frame.to_dict("records"):
+                    raw_volume = float(row.get("成交量") or 0)
+                    raw_amount = _optional_float(row.get("成交额"))
+                    bars.append(MarketBar(
                         bar_time=datetime.strptime(str(row["日期"])[:10], "%Y-%m-%d"),
                         open=float(row["开盘"]),
                         high=float(row["最高"]),
                         low=float(row["最低"]),
                         close=float(row["收盘"]),
-                        volume=float(row.get("成交量") or 0),
-                        amount=_optional_float(row.get("成交额")),
+                        volume=raw_volume * 100.0,
+                        amount=raw_amount,
                         turnover_rate=_optional_float(row.get("换手率")),
-                    )
-                    for row in frame.to_dict("records")
-                ]
+                        raw_volume=raw_volume,
+                        raw_amount=raw_amount,
+                    ))
+                return bars
         except Exception as exc:
             primary_error = exc
         try:
@@ -578,6 +593,8 @@ class AkShareMarketDataProvider:
             fields = str(line).split(",")
             if len(fields) < 11:
                 continue
+            raw_volume = float(fields[5] or 0)
+            raw_amount = _optional_float(fields[6])
             bars.append(
                 MarketBar(
                     bar_time=datetime.strptime(fields[0], "%Y-%m-%d"),
@@ -585,9 +602,11 @@ class AkShareMarketDataProvider:
                     close=float(fields[2]),
                     high=float(fields[3]),
                     low=float(fields[4]),
-                    volume=float(fields[5] or 0),
-                    amount=_optional_float(fields[6]),
+                    volume=raw_volume * 100.0,
+                    amount=raw_amount,
                     turnover_rate=_optional_float(fields[10]),
+                    raw_volume=raw_volume,
+                    raw_amount=raw_amount,
                 )
             )
         return bars
@@ -624,11 +643,10 @@ class FallbackMarketDataProvider(TushareMarketDataProvider):
 
     def begin_batch(self, **kwargs: Any) -> None:
         self.disabled_bar_providers.clear()
-        total = int(kwargs.get("total") or 0)
         adjustment = str(kwargs.get("adjustment") or "NONE").upper()
-        if total >= 10 and adjustment in {"QFQ", "HFQ"}:
+        if adjustment in {"QFQ", "HFQ"}:
             self.disabled_bar_providers["tushare"] = (
-                "large adjusted batch uses BaoStock to avoid per-symbol adj_factor quota"
+                "adjusted research series uses BaoStock consistently; Tushare is reserved for raw bars"
             )
 
     def end_batch(self) -> None:
@@ -647,16 +665,17 @@ class FallbackMarketDataProvider(TushareMarketDataProvider):
         self.last_instrument_attempts = []
         self.last_instrument_provider_key = None
         for provider in self.instrument_providers:
+            started = time.monotonic()
             try:
                 items = validate_instruments(provider.fetch_instruments())
                 self.last_instrument_attempts.append(
-                    ProviderAttempt(provider.key, "accepted", row_count=len(items))
+                    ProviderAttempt(provider.key, "accepted", row_count=len(items), latency_ms=round((time.monotonic() - started) * 1000))
                 )
                 self.last_instrument_provider_key = provider.key
                 return items
             except Exception as exc:
                 self.last_instrument_attempts.append(
-                    ProviderAttempt(provider.key, "rejected", sanitize_text(exc, limit=500))
+                    ProviderAttempt(provider.key, "rejected", sanitize_text(exc, limit=500), latency_ms=round((time.monotonic() - started) * 1000))
                 )
         raise RuntimeError("all instrument master-data providers failed contract validation")
 
@@ -678,19 +697,20 @@ class FallbackMarketDataProvider(TushareMarketDataProvider):
             if disabled_reason:
                 self.last_bar_attempts.append(ProviderAttempt(provider.key, "skipped", disabled_reason))
                 continue
+            started = time.monotonic()
             try:
                 bars = provider.fetch_bars(**kwargs)
                 validated = validate_market_bars(
                     bars, start_date=kwargs["start_date"], end_date=kwargs["end_date"]
                 )
                 self.last_bar_attempts.append(
-                    ProviderAttempt(provider.key, "accepted", row_count=len(validated))
+                    ProviderAttempt(provider.key, "accepted", row_count=len(validated), latency_ms=round((time.monotonic() - started) * 1000))
                 )
                 self.last_bar_provider_key = provider.key
                 return validated
             except Exception as exc:
                 safe_error = sanitize_text(exc, limit=500)
-                self.last_bar_attempts.append(ProviderAttempt(provider.key, "rejected", safe_error))
+                self.last_bar_attempts.append(ProviderAttempt(provider.key, "rejected", safe_error, latency_ms=round((time.monotonic() - started) * 1000)))
                 if _is_non_retryable_provider_error(exc):
                     self.disabled_bar_providers[provider.key] = safe_error
         failures = "; ".join(
@@ -702,6 +722,7 @@ class FallbackMarketDataProvider(TushareMarketDataProvider):
         self.last_calendar_attempts = []
         self.last_calendar_provider_key = None
         for provider in self.calendar_providers:
+            started = time.monotonic()
             try:
                 sessions = validate_calendar(
                     provider.fetch_calendar(**kwargs),
@@ -709,13 +730,13 @@ class FallbackMarketDataProvider(TushareMarketDataProvider):
                     end_date=kwargs["end_date"],
                 )
                 self.last_calendar_attempts.append(
-                    ProviderAttempt(provider.key, "accepted", row_count=len(sessions))
+                    ProviderAttempt(provider.key, "accepted", row_count=len(sessions), latency_ms=round((time.monotonic() - started) * 1000))
                 )
                 self.last_calendar_provider_key = provider.key
                 return sessions
             except Exception as exc:
                 self.last_calendar_attempts.append(
-                    ProviderAttempt(provider.key, "rejected", sanitize_text(exc, limit=500))
+                    ProviderAttempt(provider.key, "rejected", sanitize_text(exc, limit=500), latency_ms=round((time.monotonic() - started) * 1000))
                 )
         failures = "; ".join(
             f"{item.provider}: {item.error or item.status}" for item in self.last_calendar_attempts

@@ -35,18 +35,32 @@ async function mockApi(page: Page) {
         ],
       },
       watchlist_hits: [],
-      data_health: { status: "fresh", checked_at: "2026-07-28T09:00:00Z", expected_trade_date: "2026-07-24", database_backend: "sqlite", backup_mode: "application", categories: [] },
+      data_health: {
+        status: "fresh", decision_usable: true, checked_at: "2026-07-28T09:00:00Z",
+        expected_trade_date: "2026-07-24", as_of_trade_date: "2026-07-24",
+        last_full_refresh: "2026-07-24T17:30:00Z", blocking_reasons: [],
+        provider_summary: {}, recommended_action: "可继续今日研究",
+        database_backend: "sqlite", backup_mode: "application", categories: [],
+      },
       attention_jobs: { failed: [], pending: [] },
       missing_or_stale_modules: [],
     }
     else if (path.endsWith("/system/data-health")) body = {
-      status: "fresh", checked_at: "2026-07-28T09:00:00Z", expected_trade_date: "2026-07-24",
+      status: "fresh", decision_usable: true, checked_at: "2026-07-28T09:00:00Z",
+      expected_trade_date: "2026-07-24", as_of_trade_date: "2026-07-24",
+      last_full_refresh: "2026-07-24T17:30:00Z", blocking_reasons: [],
+      provider_summary: {}, recommended_action: "可继续今日研究",
       database_backend: "sqlite", backup_mode: "application",
       categories: [
         { key: "daily_bars", status: "fresh", source: "Tushare", data_time: "2026-07-24", coverage_rate: 0.96, missing_fields: [], single_source: false },
       ],
     }
     else if (path.endsWith("/system/backups")) body = { mode: "application", items: [] }
+    else if (path.endsWith("/system/reliability-report")) body = {
+      target_days: 10, observed_days: 1, passed_days: 1, pass_rate: 1,
+      average_coverage: 1, burn_in_complete: false,
+      items: [{ trade_date: "2026-07-24", decision_usable: true, coverage_rate: 1, status: "fresh", blocking_reasons: [] }],
+    }
     else if (path.endsWith("/jobs/job-1/stages")) body = { job_id: "job-1", status: "running", items: [{ stage_key: "scan", status: "progress", processed: 9, coverage_rate: 0.45, updated_at: "2026-07-28T09:01:00Z" }] }
     else if (path.endsWith("/jobs/job-1/items")) body = [{ id: "item-1", subject_key: "600519", status: "failed", attempts: 2, error: "行情数据不足" }]
     else if (path.endsWith("/jobs/job-1/cancel")) body = { id: "job-1", kind: "screen.hot", status: "cancelled", progress: 45, total: 20, completed: 9, failed: 1, created_at: "2026-07-28T09:00:00Z" }
@@ -150,19 +164,19 @@ test("renders meaningful content without runtime errors or framework overlays", 
   await page.waitForTimeout(500)
   expect(browserErrors).toEqual([])
 })
-test("defaults to market radar and exposes the unified research navigation", async ({ page, isMobile }) => {
+test("defaults to today's research workbench and exposes unified navigation", async ({ page, isMobile }) => {
   await page.goto("/")
-  await expect(page).toHaveURL(/\/radar$/)
-  await expect(page.getByRole("heading", { name: "市场雷达" })).toBeVisible()
+  await expect(page).toHaveURL(/\/today$/)
+  await expect(page.getByRole("heading", { name: "今日研究" })).toBeVisible()
   if (!isMobile) {
-    for (const label of ["个股分析", "自选股", "涨停分析", "新股分析", "缠论扫描", "市场筛选", "帮助中心", "设置"]) {
-      await expect(page.getByRole("link", { name: label })).toBeVisible()
+    for (const label of ["今日研究", "市场雷达", "个股分析", "自选股", "涨停分析", "新股分析", "缠论扫描", "市场筛选", "帮助中心", "设置"]) {
+      await expect(page.getByRole("link", { name: label, exact: true })).toBeVisible()
     }
     await expect(page.getByRole("link", { name: "复盘与次日准备" })).toHaveCount(0)
   }
-  await expect(page.getByText("下一交易日开盘前").first()).toBeVisible()
-  await expect(page.getByText("控制仓位，优先等待结构确认。")).toBeVisible()
-  await expect(page.getByText("数据与任务待办")).toBeVisible()
+  await expect(page.getByText("今日数据已通过决策门禁")).toBeVisible()
+  await expect(page.getByText("最新完整交易日复盘")).toBeVisible()
+  await expect(page.getByText("任务与异常")).toBeVisible()
 })
 
 test("context help lands in the versioned help center", async ({ page }) => {
@@ -193,6 +207,8 @@ test("settings presents localized system labels", async ({ page }) => {
   await expect(page.getByText("本地免登录")).toBeVisible()
   await expect(page.getByText("SQLite 本地数据库")).toBeVisible()
   await expect(page.getByText("股票主数据")).toBeVisible()
+  await expect(page.getByText("免费源稳定性试运行")).toBeVisible()
+  await expect(page.getByText("仍需累计 9 个交易日；每日准备完成后自动记录。")).toBeVisible()
 })
 
 test("mobile navigation is available as a drawer", async ({ page, isMobile }) => {
@@ -213,8 +229,15 @@ test("watchlist management is part of the research workspace", async ({ page }) 
 })
 
 test("stock research switches through the integrated watchlist queue", async ({ page }) => {
+  const browserErrors: string[] = []
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text())
+  })
+  page.on("pageerror", (error) => browserErrors.push(error.message))
   await page.goto("/stocks?id=1")
   await expect(page.getByRole("region", { name: "自选研究队列" })).toBeVisible()
+  const chart = page.getByLabel("股票日 K 线、成交量、MACD、缠论结构与背离标记图")
+  await expect(chart.locator("canvas")).toHaveCount(1)
   await expect(page.getByText("当前 1 / 2")).toBeVisible()
   await expect(page.getByRole("button", { name: "背离 0" })).toBeVisible()
   await page.getByRole("button", { name: "筛选标签：核心观察，共 1 只" }).click()
@@ -224,6 +247,8 @@ test("stock research switches through the integrated watchlist queue", async ({ 
   await expect(page).toHaveURL(/\/stocks\?id=2$/)
   await expect(page.getByText("当前 2 / 2")).toBeVisible()
   await expect(page.getByRole("button", { name: /000997 新大陆/ })).toHaveAttribute("aria-current", "true")
+  await expect(chart.locator("canvas")).toHaveCount(1)
+  expect(browserErrors).toEqual([])
 })
 test("data health summary explains which modules cause the overall state", async ({ page }) => {
   await page.goto("/radar")
@@ -232,7 +257,7 @@ test("data health summary explains which modules cause the overall state", async
   await expect(page.getByText("所有核心模块均可用。")).toBeVisible()
 })
 
-test("task center shows localized child status and supports cancellation", async ({ page }) => {
+test("task center shows localized child status and supports cancellation", async ({ page, isMobile }) => {
   await page.goto("/radar")
   await page.getByRole("button", { name: "任务中心" }).click()
   await expect(page.getByRole("heading", { name: "任务中心" })).toBeVisible()
@@ -242,7 +267,7 @@ test("task center shows localized child status and supports cancellation", async
   expect(statusBox).not.toBeNull()
   expect(cancelBox).not.toBeNull()
   expect(Math.abs((statusBox!.y + statusBox!.height / 2) - (cancelBox!.y + cancelBox!.height / 2))).toBeLessThanOrEqual(1)
-  expect(cancelBox!.height).toBe(28)
+  expect(cancelBox!.height).toBe(isMobile ? 40 : 28)
   await page.getByText("查看任务明细").first().click()
   await expect(page.getByText("行情数据不足")).toBeVisible()
   await expect(page.getByText("失败", { exact: true }).first()).toBeVisible()
@@ -254,7 +279,7 @@ test("scan result detail exposes evidence and stock research link", async ({ pag
   await page.goto("/scans")
   await page.getByRole("button", { name: "查看结果" }).click()
   await expect(page.getByText("贵州茅台")).toBeVisible()
-  await page.getByRole("button", { name: "查看详情" }).click()
+  await page.getByRole("button", { name: "证据" }).click()
   await expect(page.getByRole("heading", { name: "扫描结果详情" })).toBeVisible()
   await expect(page.getByText(/二买结构确认/)).toBeVisible()
   await expect(page.getByRole("link", { name: "进入个股分析" })).toHaveAttribute("href", "/stocks?id=1")

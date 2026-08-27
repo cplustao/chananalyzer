@@ -33,6 +33,44 @@ def _attempts(provider: HistoricalMarketDataProvider, attribute: str) -> list[di
     return attempts
 
 
+def _attempt_summary(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return a bounded provider summary for job payloads and stage events.
+
+    Per-symbol attempts remain on ``IngestionRun`` for diagnostics. Duplicating
+    thousands of entries into every Job result made polling responses needlessly
+    large, so jobs expose only aggregate provider telemetry.
+    """
+
+    summary: dict[str, dict[str, Any]] = {}
+    for item in items:
+        provider = str(item.get("provider") or "unknown")
+        status = str(item.get("status") or "unknown")
+        bucket = summary.setdefault(
+            provider,
+            {
+                "provider": provider,
+                "accepted": 0,
+                "rejected": 0,
+                "skipped": 0,
+                "rows": 0,
+                "latency_ms": 0,
+                "rate_limited": 0,
+            },
+        )
+        if status in {"accepted", "rejected", "skipped"}:
+            bucket[status] += 1
+        bucket["rows"] += int(item.get("row_count") or 0)
+        bucket["latency_ms"] += int(item.get("latency_ms") or 0)
+        error_text = str(item.get("error") or "").lower()
+        if "rate limit" in error_text or "频率" in error_text or "too many requests" in error_text:
+            bucket["rate_limited"] += 1
+    for bucket in summary.values():
+        attempts = bucket["accepted"] + bucket["rejected"]
+        bucket["success_rate"] = bucket["accepted"] / attempts if attempts else 0.0
+        bucket["fallback_or_circuit_count"] = bucket["rejected"] + bucket["skipped"]
+    return list(summary.values())
+
+
 def _digest(value: dict[str, Any]) -> str:
     encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str).encode()
     return hashlib.sha256(encoded).hexdigest()
@@ -364,6 +402,6 @@ class IngestionService:
             "errors": errors[:100],
             "freshness": run.freshness,
             "coverage_rate": run.coverage_rate,
-            "provider_chain": provider_chain,
+            "provider_chain": _attempt_summary(provider_chain),
             "data_time": run.data_time.isoformat() if run.data_time else None,
         }

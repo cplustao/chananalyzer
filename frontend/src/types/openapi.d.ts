@@ -721,6 +721,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/reliability-report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Reliability Report */
+        get: operations["reliability_report_api_v1_system_reliability_report_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/watchlists/default": {
         parameters: {
             query?: never;
@@ -820,6 +837,16 @@ export interface components {
             amount: number | null;
             /** Turnover Rate */
             turnover_rate: number | null;
+            /**
+             * Trade Status
+             * @default trading
+             */
+            trade_status: string;
+            /**
+             * Unit Contract Version
+             * @default cn-equity-v1
+             */
+            unit_contract_version: string;
         };
         /** BatchAnalysisJobCreate */
         BatchAnalysisJobCreate: {
@@ -860,6 +887,39 @@ export interface components {
             algorithm_versions: {
                 [key: string]: string;
             };
+        };
+        /** DailyPrepareJobCreate */
+        DailyPrepareJobCreate: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "daily.prepare";
+            payload?: components["schemas"]["DailyPreparePayload"];
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+        };
+        /** DailyPreparePayload */
+        DailyPreparePayload: {
+            /**
+             * Lookback Days
+             * @default 10
+             */
+            lookback_days: number;
+            /**
+             * Run Screeners
+             * @default false
+             */
+            run_screeners: boolean;
+            /**
+             * Screening Preset
+             * @default balanced
+             * @enum {string}
+             */
+            screening_preset: "conservative" | "balanced" | "aggressive";
         };
         /** DataHealthCategory */
         DataHealthCategory: {
@@ -924,6 +984,23 @@ export interface components {
             checked_at: string;
             /** Expected Trade Date */
             expected_trade_date?: string | null;
+            /**
+             * Decision Usable
+             * @default false
+             */
+            decision_usable: boolean;
+            /** As Of Trade Date */
+            as_of_trade_date?: string | null;
+            /** Last Full Refresh */
+            last_full_refresh?: string | null;
+            /** Blocking Reasons */
+            blocking_reasons?: string[];
+            /** Provider Summary */
+            provider_summary?: {
+                [key: string]: unknown;
+            };
+            /** Recommended Action */
+            recommended_action?: string | null;
             /** Database Backend */
             database_backend: string;
             /**
@@ -1042,6 +1119,12 @@ export interface components {
             area: string | null;
             /** Status */
             status: string;
+            /**
+             * Asset Type
+             * @default stock
+             * @enum {string}
+             */
+            asset_type: "stock" | "index" | "other";
         };
         /** JobAccepted */
         JobAccepted: {
@@ -1151,6 +1234,16 @@ export interface components {
             started_at: string | null;
             /** Finished At */
             finished_at: string | null;
+            /** Heartbeat At */
+            heartbeat_at?: string | null;
+            /** Current Stage */
+            current_stage?: string | null;
+            /** Checkpoint */
+            checkpoint?: {
+                [key: string]: unknown;
+            } | null;
+            /** Failure Summary */
+            failure_summary?: string | null;
         };
         /** LoginRequest */
         LoginRequest: {
@@ -1312,7 +1405,7 @@ export interface components {
              * Job Kind
              * @enum {string}
              */
-            job_kind: "market_radar.refresh" | "limit_up.refresh" | "ipo.refresh" | "data.refresh" | "screen.hot" | "screen.smart";
+            job_kind: "market_radar.refresh" | "limit_up.refresh" | "ipo.refresh" | "data.refresh" | "screen.hot" | "screen.smart" | "daily.prepare";
             /** Hour */
             hour: number;
             /** Minute */
@@ -1412,6 +1505,22 @@ export interface components {
             note?: string | null;
             /** Tag Names */
             tag_names?: string[];
+            /** Thesis */
+            thesis?: string | null;
+            /** Confirmation Trigger */
+            confirmation_trigger?: string | null;
+            /** Invalidation Condition */
+            invalidation_condition?: string | null;
+            /** Next Action */
+            next_action?: string | null;
+            /** Next Review Date */
+            next_review_date?: string | null;
+            /**
+             * Research Status
+             * @default watching
+             * @enum {string}
+             */
+            research_status: "pending" | "watching" | "confirmed" | "invalidated";
         };
         /** WatchlistItemUpdate */
         WatchlistItemUpdate: {
@@ -1421,6 +1530,22 @@ export interface components {
             tag_names?: string[];
             /** Position */
             position?: number | null;
+            /** Thesis */
+            thesis?: string | null;
+            /** Confirmation Trigger */
+            confirmation_trigger?: string | null;
+            /** Invalidation Condition */
+            invalidation_condition?: string | null;
+            /** Next Action */
+            next_action?: string | null;
+            /** Next Review Date */
+            next_review_date?: string | null;
+            /**
+             * Research Status
+             * @default watching
+             * @enum {string}
+             */
+            research_status: "pending" | "watching" | "confirmed" | "invalidated";
         };
         /** WatchlistItemView */
         WatchlistItemView: {
@@ -1433,6 +1558,22 @@ export interface components {
             note: string | null;
             /** Tags */
             tags: string[];
+            /** Thesis */
+            thesis?: string | null;
+            /** Confirmation Trigger */
+            confirmation_trigger?: string | null;
+            /** Invalidation Condition */
+            invalidation_condition?: string | null;
+            /** Next Action */
+            next_action?: string | null;
+            /** Next Review Date */
+            next_review_date?: string | null;
+            /**
+             * Research Status
+             * @default watching
+             * @enum {string}
+             */
+            research_status: "pending" | "watching" | "confirmed" | "invalidated";
         };
         /** WatchlistView */
         WatchlistView: {
@@ -1915,7 +2056,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["EmptyJobCreate"] | components["schemas"]["RefreshJobCreate"] | components["schemas"]["ScanJobCreate"] | components["schemas"]["BatchAnalysisJobCreate"] | components["schemas"]["StockAnalysisJobCreate"] | components["schemas"]["DataRefreshJobCreate"];
+                "application/json": components["schemas"]["EmptyJobCreate"] | components["schemas"]["RefreshJobCreate"] | components["schemas"]["ScanJobCreate"] | components["schemas"]["BatchAnalysisJobCreate"] | components["schemas"]["StockAnalysisJobCreate"] | components["schemas"]["DataRefreshJobCreate"] | components["schemas"]["DailyPrepareJobCreate"];
             };
         };
         responses: {
@@ -2787,6 +2928,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DataHealthView"];
+                };
+            };
+        };
+    };
+    reliability_report_api_v1_system_reliability_report_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -39,6 +39,7 @@ class IngestionRepository:
             select(Instrument)
             .where(
                 Instrument.status == "active",
+                Instrument.asset_type == "stock",
                 Instrument.ts_code.is_not(None),
                 func.length(Instrument.code) == 6,
             )
@@ -80,6 +81,7 @@ class IngestionRepository:
                     industry_id=industry.id if industry else None,
                     list_date=item.list_date,
                     status=item.status,
+                    asset_type=item.asset_type,
                     source_payload=source_payload,
                 )
                 self.session.add(row)
@@ -88,6 +90,7 @@ class IngestionRepository:
                 row.exchange = item.exchange
                 row.name = item.name
                 row.status = item.status
+                row.asset_type = item.asset_type
                 row.source_payload = {**(row.source_payload or {}), **source_payload}
                 if item.area is not None:
                     row.area = item.area
@@ -135,9 +138,13 @@ class IngestionRepository:
                 "close": item.close,
                 "volume": item.volume,
                 "amount": item.amount,
+                "raw_volume": item.raw_volume,
+                "raw_amount": item.raw_amount,
                 "turnover_rate": item.turnover_rate,
                 "data_source_id": data_source_id,
                 "quality_status": "ok",
+                "trade_status": "trading" if item.volume > 0 else "suspended",
+                "unit_contract_version": "cn-equity-v1",
                 "created_at": now,
                 "updated_at": now,
             }
@@ -159,9 +166,13 @@ class IngestionRepository:
                 "close",
                 "volume",
                 "amount",
+                "raw_volume",
+                "raw_amount",
                 "turnover_rate",
                 "data_source_id",
                 "quality_status",
+                "trade_status",
+                "unit_contract_version",
                 "updated_at",
             )
         }
@@ -238,4 +249,3 @@ class IngestionRepository:
                 row.source = source
             count += 1
         return count
-

@@ -45,6 +45,7 @@ class Instrument(Base):
     )
     list_date: Mapped[date | None] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(24), default="active", index=True)
+    asset_type: Mapped[str] = mapped_column(String(16), default="stock", index=True)
     source_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
@@ -78,9 +79,13 @@ class Bar(Base):
     close: Mapped[float] = mapped_column(Float, nullable=False)
     volume: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     amount: Mapped[float | None] = mapped_column(Float)
+    raw_volume: Mapped[float | None] = mapped_column(Float)
+    raw_amount: Mapped[float | None] = mapped_column(Float)
     turnover_rate: Mapped[float | None] = mapped_column(Float)
     data_source_id: Mapped[int | None] = mapped_column(ForeignKey("data_sources.id", ondelete="SET NULL"))
     quality_status: Mapped[str] = mapped_column(String(24), default="ok")
+    trade_status: Mapped[str] = mapped_column(String(24), default="trading", index=True)
+    unit_contract_version: Mapped[str] = mapped_column(String(32), default="cn-equity-v1", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     instrument: Mapped[Instrument] = relationship(back_populates="bars")
@@ -123,3 +128,22 @@ class IngestionRun(Base):
     fallback_errors: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)
     contract_version: Mapped[str] = mapped_column(String(32), default="market-data-v2")
     input_digest: Mapped[str | None] = mapped_column(String(64))
+
+
+class DataHealthSnapshot(Base):
+    __tablename__ = "data_health_snapshots"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True, default="current")
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    generated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
+class DataReliabilitySample(Base):
+    __tablename__ = "data_reliability_samples"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    trade_date: Mapped[date | None] = mapped_column(Date, index=True)
+    checked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    decision_usable: Mapped[bool] = mapped_column(Boolean, default=False)
+    coverage_rate: Mapped[float | None] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    provider_summary: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    blocking_reasons: Mapped[list[str] | None] = mapped_column(JSON)

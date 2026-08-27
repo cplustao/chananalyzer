@@ -228,27 +228,15 @@ def test_secret_connection_reports_health_without_exposing_value(client, monkeyp
 def test_automation_schedule_can_be_configured_run_and_enqueued(client, session):
     schedules = client.get("/api/v1/settings/schedules")
     assert schedules.status_code == 200
-    assert {item["key"] for item in schedules.json()} == {
-        "weekday-data-refresh",
-        "weekday-limit-up-refresh",
-        "weekday-ipo-refresh",
-        "weekday-hot-screen",
-        "weekday-smart-screen",
-        "weekday-radar-refresh",
-    }
+    assert {item["key"] for item in schedules.json()} == {"weekday-daily-prepare"}
     by_key = {item["key"]: item for item in schedules.json()}
-    assert by_key["weekday-limit-up-refresh"]["job_kind"] == "limit_up.refresh"
-    assert by_key["weekday-ipo-refresh"]["job_kind"] == "ipo.refresh"
-    assert by_key["weekday-ipo-refresh"]["payload"]["lookahead_days"] == 90
-    assert by_key["weekday-radar-refresh"]["hour"] == 18
-    assert by_key["weekday-hot-screen"]["job_kind"] == "screen.hot"
-    assert by_key["weekday-hot-screen"]["payload"]["top_n"] == 200
-    assert by_key["weekday-smart-screen"]["job_kind"] == "screen.smart"
-    assert by_key["weekday-smart-screen"]["payload"]["exclude_st"] is True
+    assert by_key["weekday-daily-prepare"]["job_kind"] == "daily.prepare"
+    assert by_key["weekday-daily-prepare"]["hour"] == 17
+    assert by_key["weekday-daily-prepare"]["payload"]["run_screeners"] is False
     updated = client.put(
-        "/api/v1/settings/schedules/weekday-radar-refresh",
+        "/api/v1/settings/schedules/weekday-daily-prepare",
         json={
-            "job_kind": "market_radar.refresh",
+            "job_kind": "daily.prepare",
             "hour": 17,
             "minute": 25,
             "weekdays": [1, 2, 3, 4, 5],
@@ -260,7 +248,7 @@ def test_automation_schedule_can_be_configured_run_and_enqueued(client, session)
     assert updated.json()["enabled"] is True
     assert updated.json()["next_run_at"].endswith("+08:00")
     run_now = client.post(
-        "/api/v1/settings/schedules/weekday-radar-refresh/run"
+        "/api/v1/settings/schedules/weekday-daily-prepare/run"
     )
     assert run_now.status_code == 202
 
@@ -268,20 +256,22 @@ def test_automation_schedule_can_be_configured_run_and_enqueued(client, session)
 
     data_schedule = upsert_schedule(
         session,
-        "weekday-data-refresh",
-        "data.refresh",
-        16,
-        30,
+        "weekday-daily-prepare",
+        "daily.prepare",
+        17,
+        0,
         [1, 2, 3, 4, 5],
         True,
         {},
     )
     data_schedule.next_run_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=1)
     session.commit()
-    assert enqueue_due_schedules(session, max_attempts=3) == 1
+    # The manual run is still queued with the same canonical payload, so the
+    # due schedule advances without creating a duplicate active preparation.
+    assert enqueue_due_schedules(session, max_attempts=3) == 0
     refreshed = session.scalar(
         select(AutomationSchedule).where(
-            AutomationSchedule.key == "weekday-data-refresh"
+            AutomationSchedule.key == "weekday-daily-prepare"
         )
     )
     assert refreshed is not None

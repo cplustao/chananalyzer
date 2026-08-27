@@ -11,72 +11,22 @@ from backend.app.db.models.common import utcnow
 from backend.app.repositories.jobs import JobRepository
 
 TIMEZONE = ZoneInfo("Asia/Shanghai")
-ALLOWED_SCHEDULE_JOB_KINDS = {"market_radar.refresh", "limit_up.refresh", "ipo.refresh", "data.refresh", "screen.hot", "screen.smart"}
+ALLOWED_SCHEDULE_JOB_KINDS = {"market_radar.refresh", "limit_up.refresh", "ipo.refresh", "data.refresh", "screen.hot", "screen.smart", "daily.prepare"}
 DEFAULT_SCHEDULES = (
     {
-        "key": "weekday-data-refresh",
-        "job_kind": "data.refresh",
-        "hour": 16,
-        "minute": 30,
-        "weekdays": [1, 2, 3, 4, 5],
-    },
-    {
-        "key": "weekday-hot-screen",
-        "job_kind": "screen.hot",
-        "hour": 16,
-        "minute": 10,
-        "weekdays": [1, 2, 3, 4, 5],
-        "payload": {
-            "rank_type": "top_gainers",
-            "top_n": 200,
-            "types": ["2", "3a", "3b"],
-            "scan_side": "buy",
-            "codes": [],
-            "industries": [],
-            "areas": [],
-            "exclude_st": True,
-        },
-    },
-    {
-        "key": "weekday-smart-screen",
-        "job_kind": "screen.smart",
-        "hour": 16,
-        "minute": 20,
-        "weekdays": [1, 2, 3, 4, 5],
-        "payload": {
-            "scan_side": "buy",
-            "types": ["2", "3a", "3b"],
-            "codes": [],
-            "industries": [],
-            "areas": [],
-            "exclude_st": True,
-            "rank_type": "top_gainers",
-            "top_n": 200,
-        },
-    },
-    {
-        "key": "weekday-limit-up-refresh",
-        "job_kind": "limit_up.refresh",
-        "hour": 16,
-        "minute": 50,
-        "weekdays": [1, 2, 3, 4, 5],
-    },
-    {
-        "key": "weekday-ipo-refresh",
-        "job_kind": "ipo.refresh",
+        "key": "weekday-daily-prepare",
+        "job_kind": "daily.prepare",
         "hour": 17,
-        "minute": 10,
-        "weekdays": [1, 2, 3, 4, 5],
-        "payload": {"lookback_days": 365, "lookahead_days": 90},
-    },
-    {
-        "key": "weekday-radar-refresh",
-        "job_kind": "market_radar.refresh",
-        "hour": 18,
         "minute": 0,
         "weekdays": [1, 2, 3, 4, 5],
+        "payload": {"lookback_days": 10, "run_screeners": False, "screening_preset": "balanced"},
     },
 )
+
+LEGACY_DEFAULT_KEYS = {
+    "weekday-data-refresh", "weekday-hot-screen", "weekday-smart-screen",
+    "weekday-limit-up-refresh", "weekday-ipo-refresh", "weekday-radar-refresh",
+}
 
 
 def build_cron(hour: int, minute: int, weekdays: list[int]) -> str:
@@ -141,16 +91,14 @@ def schedule_view(schedule: AutomationSchedule) -> dict[str, object]:
 
 def ensure_default_schedules(session: Session) -> list[AutomationSchedule]:
     existing = {item.key: item for item in session.scalars(select(AutomationSchedule)).all()}
+    for key in LEGACY_DEFAULT_KEYS:
+        legacy = existing.get(key)
+        if legacy is not None:
+            legacy.enabled = False
+            legacy.next_run_at = None
     for config in DEFAULT_SCHEDULES:
         current = existing.get(config["key"])
         if current is not None:
-            if (
-                current.key == "weekday-radar-refresh"
-                and not current.enabled
-                and current.cron_expression == "10 17 * * 1,2,3,4,5"
-            ):
-                current.cron_expression = build_cron(18, 0, [1, 2, 3, 4, 5])
-                session.commit()
             continue
         schedule = AutomationSchedule(
             key=str(config["key"]),

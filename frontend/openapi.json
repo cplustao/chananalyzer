@@ -642,6 +642,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/DataRefreshJobCreate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/DailyPrepareJobCreate"
                   }
                 ],
                 "discriminator": {
@@ -657,7 +660,8 @@
                     "limit_up.analyze": "#/components/schemas/BatchAnalysisJobCreate",
                     "ipo.analyze": "#/components/schemas/BatchAnalysisJobCreate",
                     "stock.analyze": "#/components/schemas/StockAnalysisJobCreate",
-                    "data.refresh": "#/components/schemas/DataRefreshJobCreate"
+                    "data.refresh": "#/components/schemas/DataRefreshJobCreate",
+                    "daily.prepare": "#/components/schemas/DailyPrepareJobCreate"
                   }
                 },
                 "title": "Payload"
@@ -2029,6 +2033,51 @@
         }
       }
     },
+    "/api/v1/system/reliability-report": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Reliability Report",
+        "operationId": "reliability_report_api_v1_system_reliability_report_get",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Reliability Report Api V1 System Reliability Report Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/watchlists/default": {
       "get": {
         "tags": [
@@ -2290,6 +2339,16 @@
               }
             ],
             "title": "Turnover Rate"
+          },
+          "trade_status": {
+            "type": "string",
+            "title": "Trade Status",
+            "default": "trading"
+          },
+          "unit_contract_version": {
+            "type": "string",
+            "title": "Unit Contract Version",
+            "default": "cn-equity-v1"
           }
         },
         "type": "object",
@@ -2430,6 +2489,57 @@
           "algorithm_versions"
         ],
         "title": "Catalog"
+      },
+      "DailyPrepareJobCreate": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "daily.prepare",
+            "title": "Kind"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/DailyPreparePayload"
+          },
+          "force": {
+            "type": "boolean",
+            "title": "Force",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "DailyPrepareJobCreate"
+      },
+      "DailyPreparePayload": {
+        "properties": {
+          "lookback_days": {
+            "type": "integer",
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Lookback Days",
+            "default": 10
+          },
+          "run_screeners": {
+            "type": "boolean",
+            "title": "Run Screeners",
+            "default": false
+          },
+          "screening_preset": {
+            "type": "string",
+            "enum": [
+              "conservative",
+              "balanced",
+              "aggressive"
+            ],
+            "title": "Screening Preset",
+            "default": "balanced"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DailyPreparePayload"
       },
       "DataHealthCategory": {
         "properties": {
@@ -2650,6 +2760,58 @@
               }
             ],
             "title": "Expected Trade Date"
+          },
+          "decision_usable": {
+            "type": "boolean",
+            "title": "Decision Usable",
+            "default": false
+          },
+          "as_of_trade_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of Trade Date"
+          },
+          "last_full_refresh": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Full Refresh"
+          },
+          "blocking_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocking Reasons"
+          },
+          "provider_summary": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Provider Summary"
+          },
+          "recommended_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommended Action"
           },
           "database_backend": {
             "type": "string",
@@ -2972,6 +3134,16 @@
           "status": {
             "type": "string",
             "title": "Status"
+          },
+          "asset_type": {
+            "type": "string",
+            "enum": [
+              "stock",
+              "index",
+              "other"
+            ],
+            "title": "Asset Type",
+            "default": "stock"
           }
         },
         "type": "object",
@@ -3336,6 +3508,52 @@
               }
             ],
             "title": "Finished At"
+          },
+          "heartbeat_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeat At"
+          },
+          "current_stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Stage"
+          },
+          "checkpoint": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkpoint"
+          },
+          "failure_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Summary"
           }
         },
         "type": "object",
@@ -3818,7 +4036,8 @@
               "ipo.refresh",
               "data.refresh",
               "screen.hot",
-              "screen.smart"
+              "screen.smart",
+              "daily.prepare"
             ],
             "title": "Job Kind"
           },
@@ -4079,6 +4298,73 @@
             },
             "type": "array",
             "title": "Tag Names"
+          },
+          "thesis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thesis"
+          },
+          "confirmation_trigger": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmation Trigger"
+          },
+          "invalidation_condition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invalidation Condition"
+          },
+          "next_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Action"
+          },
+          "next_review_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Review Date"
+          },
+          "research_status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "watching",
+              "confirmed",
+              "invalidated"
+            ],
+            "title": "Research Status",
+            "default": "watching"
           }
         },
         "type": "object",
@@ -4118,6 +4404,73 @@
               }
             ],
             "title": "Position"
+          },
+          "thesis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thesis"
+          },
+          "confirmation_trigger": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmation Trigger"
+          },
+          "invalidation_condition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invalidation Condition"
+          },
+          "next_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Action"
+          },
+          "next_review_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Review Date"
+          },
+          "research_status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "watching",
+              "confirmed",
+              "invalidated"
+            ],
+            "title": "Research Status",
+            "default": "watching"
           }
         },
         "type": "object",
@@ -4153,6 +4506,73 @@
             },
             "type": "array",
             "title": "Tags"
+          },
+          "thesis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thesis"
+          },
+          "confirmation_trigger": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmation Trigger"
+          },
+          "invalidation_condition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invalidation Condition"
+          },
+          "next_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Action"
+          },
+          "next_review_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Review Date"
+          },
+          "research_status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "watching",
+              "confirmed",
+              "invalidated"
+            ],
+            "title": "Research Status",
+            "default": "watching"
           }
         },
         "type": "object",

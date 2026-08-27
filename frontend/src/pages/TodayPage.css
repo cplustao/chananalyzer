@@ -1,0 +1,29 @@
+.decision-gate { display: flex; align-items: flex-start; gap: 14px; border: 1px solid var(--border); border-radius: 14px; padding: 18px; background: var(--card); }
+.decision-gate > svg { flex: 0 0 auto; margin-top: 2px; }
+.decision-gate > div { flex: 1; }
+.decision-gate strong { font-size: 16px; }
+.decision-gate p { margin: 6px 0 0; color: var(--muted-foreground); }
+.decision-gate.ready { border-color: color-mix(in srgb, #22c55e 45%, var(--border)); }
+.decision-gate.ready > svg { color: #22c55e; }
+.decision-gate.blocked { border-color: color-mix(in srgb, var(--warning) 55%, var(--border)); }
+.decision-gate.blocked > svg { color: var(--warning); }
+.decision-gate.preparing { border-color: color-mix(in srgb, #3b82f6 55%, var(--border)); }
+.decision-gate.preparing > svg { color: #60a5fa; }
+.today-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, .75fr); gap: 16px; }
+.today-focus h2 { margin: 8px 0; font-size: 22px; }
+.today-focus > p { color: var(--muted-foreground); }
+.today-evidence { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
+.today-evidence > div { padding: 14px; border-radius: 10px; background: var(--muted); }
+.today-evidence p { margin: 7px 0 0; font-size: 13px; color: var(--muted-foreground); }
+.readiness-list, .review-list { display: grid; gap: 8px; margin: 12px 0; }
+.readiness-list > div, .review-list > a { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px; border-radius: 9px; background: var(--muted); }
+.readiness-list span, .review-list span { display: flex; align-items: center; gap: 8px; }
+.readiness-list svg { width: 16px; }
+.review-list span { align-items: flex-start; flex-direction: column; }
+.review-list small { color: var(--muted-foreground); }
+.candidate-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+.candidate-grid article { padding: 13px; border: 1px solid var(--border); border-radius: 10px; }
+.candidate-grid article > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.candidate-grid article > div:last-child { justify-content: flex-start; }
+.candidate-grid p { color: var(--muted-foreground); font-size: 12px; }
+@media (max-width: 800px) { .today-grid, .today-evidence { grid-template-columns: 1fr; } .decision-gate { padding: 14px; } }

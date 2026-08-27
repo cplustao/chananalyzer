@@ -5,7 +5,7 @@ import json
 import math
 import statistics
 from collections.abc import Iterable
-from datetime import datetime
+from datetime import date, datetime, time
 from typing import Any
 
 from sqlalchemy import func, select
@@ -15,7 +15,7 @@ from backend.app.core.config import Settings, get_settings
 from backend.app.db.models import Bar, Instrument, LimitUpEvent, RadarSnapshot
 from backend.app.services.bar_access import preferred_adjustment
 
-ALGORITHM_VERSION = "2.0"
+ALGORITHM_VERSION = "2.1"
 
 
 def _safe(value: Any) -> float | None:
@@ -67,8 +67,8 @@ class MarketRadarService:
         self.session = session
         self.settings = settings or get_settings()
 
-    def refresh(self) -> dict[str, Any]:
-        cached_count, histories, latest_date, adjustment_counts = self._histories()
+    def refresh(self, as_of_trade_date: date | None = None) -> dict[str, Any]:
+        cached_count, histories, latest_date, adjustment_counts = self._histories(as_of_trade_date)
         latest_limit_date = self.session.scalar(select(func.max(LimitUpEvent.trade_date)))
         if not latest_limit_date or latest_limit_date < latest_date.date():
             limit_label = latest_limit_date.isoformat() if latest_limit_date else "无数据"
@@ -165,10 +165,10 @@ class MarketRadarService:
                 "key": "turnover_liquidity",
                 "label": "成交活跃度",
                 "score": round(liquidity_score, 1),
-                "summary": f"成交额 {_round(amount / 100000)} 亿元，环比 {_round(((amount_ratio or 1) - 1) * 100)}%",
+                "summary": f"成交额 {_round(amount / 100000000)} 亿元，环比 {_round(((amount_ratio or 1) - 1) * 100)}%",
                 "metrics": {
-                    "amount_yi": _round(amount / 100000),
-                    "previous_amount_yi": _round(previous_amount / 100000),
+                    "amount_yi": _round(amount / 100000000),
+                    "previous_amount_yi": _round(previous_amount / 100000000),
                     "amount_ratio": _round(amount_ratio, 4),
                     "average_turnover_rate": _round(average_turnover),
                 },
@@ -199,6 +199,7 @@ class MarketRadarService:
         ]
         snapshot: dict[str, Any] = {
             "trade_date": latest_date.date().isoformat(),
+            "algorithm_version": ALGORITHM_VERSION,
             "generated_at": datetime.now().astimezone().isoformat(),
             "source": "v2 日线 + v2 涨停事件",
             "regime": {
@@ -229,8 +230,8 @@ class MarketRadarService:
                 "limit_down_count": limit_down_count,
             },
             "liquidity": {
-                "amount_yi": _round(amount / 100000),
-                "previous_amount_yi": _round(previous_amount / 100000),
+                "amount_yi": _round(amount / 100000000),
+                "previous_amount_yi": _round(previous_amount / 100000000),
                 "amount_ratio": _round(amount_ratio, 4),
                 "average_turnover_rate": _round(average_turnover),
             },
@@ -260,12 +261,13 @@ class MarketRadarService:
         return snapshot
 
     def _histories(
-        self,
+        self, as_of_trade_date: date | None = None,
     ) -> tuple[int, list[tuple[int, list[Bar]]], datetime, dict[str, int]]:
         instruments = list(
             self.session.execute(
                 select(Instrument.id, Instrument.exchange).where(
                     Instrument.status == "active",
+                    Instrument.asset_type == "stock",
                     func.length(Instrument.code) == 6,
                 )
             ).all()
@@ -275,15 +277,25 @@ class MarketRadarService:
         adjustment_counts: dict[str, int] = {"QFQ": 0, "NONE": 0}
         for instrument_id, exchange in instruments:
             adjustment = preferred_adjustment(exchange)
-            descending = list(
-                self.session.scalars(
-                    select(Bar)
-                    .where(
+            conditions = [
                         Bar.instrument_id == instrument_id,
                         Bar.timeframe == "DAY",
                         Bar.adjustment == adjustment,
                         Bar.quality_status == "ok",
-                    )
+            ]
+            if as_of_trade_date is not None:
+                conditions.append(Bar.bar_time < datetime.combine(as_of_trade_date, time.max))
+            source_id = self.session.scalar(
+                select(Bar.data_source_id)
+                .where(*conditions)
+                .order_by(Bar.bar_time.desc())
+                .limit(1)
+            )
+            conditions.append(Bar.data_source_id == source_id)
+            descending = list(
+                self.session.scalars(
+                    select(Bar)
+                    .where(*conditions)
                     .order_by(Bar.bar_time.desc())
                     .limit(21)
                 ).all()

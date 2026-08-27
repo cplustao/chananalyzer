@@ -32,6 +32,8 @@ const bars: Bar[] = [{
   volume: 100,
   amount: null,
   turnover_rate: null,
+  trade_status: "trading",
+  unit_contract_version: "cn-equity-v1",
 }]
 const layers: ChanLayerVisibility = { bi: true, fractals: true, segments: true, centers: true, signals: true, divergence: true }
 

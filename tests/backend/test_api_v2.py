@@ -236,7 +236,9 @@ def test_radar_history_contains_executable_position(client, session):
     assert history.json()["items"][-1]["executable_position"]["mid"] >= 0
     current = client.get("/api/v1/market/radar")
     assert current.status_code == 200
-    assert current.json()["regime"]["executable_position"]["effective"] == "下一交易日"
+    assert current.json()["regime"]["executable_position"] is None
+    assert current.json()["decision_usable"] is False
+    assert current.json()["regime"]["position_unavailable_reason"] == "数据质量门禁未通过，不生成可执行仓位"
 
 
 def test_partial_radar_never_exposes_executable_position(client, session):

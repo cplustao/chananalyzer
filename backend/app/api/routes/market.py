@@ -6,10 +6,12 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.api.deps import current_user
+from backend.app.api.deps import current_user, settings_dep
+from backend.app.core.config import Settings
 from backend.app.db.models import RadarSnapshot, User
 from backend.app.db.session import get_session
 from backend.app.domain.market_positions import build_executable_positions, risk_inputs_from_snapshot
+from backend.app.services.data_health import DataHealthService
 
 router = APIRouter(prefix="/market", tags=["market"])
 
@@ -52,6 +54,7 @@ def _history_payload(rows: list[RadarSnapshot]) -> list[dict]:
 @router.get("/radar")
 def radar(
     session: Session = Depends(get_session),
+    settings: Settings = Depends(settings_dep),
     _user: User = Depends(current_user),
 ) -> dict:
     row = session.scalar(
@@ -68,7 +71,8 @@ def radar(
         history = _history_payload(history_rows)
         snapshot = deepcopy(row.snapshot)
         regime = dict(snapshot.get("regime") or {})
-        if history:
+        health = DataHealthService(session, settings).cached_snapshot()
+        if history and health.get("decision_usable"):
             position = history[-1]["executable_position"]
             if position is not None:
                 regime["instant_position_range"] = regime.get("position_range")
@@ -79,11 +83,18 @@ def radar(
                 regime.pop("instant_position_range", None)
                 regime["executable_position"] = None
                 regime["position_unavailable_reason"] = "当前交易日或 MA20 样本覆盖未达到可信度门槛"
+        else:
+            regime.pop("position_range", None)
+            regime.pop("instant_position_range", None)
+            regime["executable_position"] = None
+            regime["position_unavailable_reason"] = "数据质量门禁未通过，不生成可执行仓位"
         snapshot["regime"] = regime
         return {
             **snapshot,
             "source": "v2_cache",
             "algorithm_version": row.algorithm_version,
+            "decision_usable": bool(health.get("decision_usable")),
+            "blocking_reasons": health.get("blocking_reasons", []),
         }
     return {"source": "v2_cache", "status": "empty", "message": "暂无市场雷达快照，请提交刷新任务"}
 

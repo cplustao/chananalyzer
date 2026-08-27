@@ -38,6 +38,7 @@ class InstrumentView(ApiModel):
     industry: str | None = None
     area: str | None
     status: str
+    asset_type: Literal["stock", "index", "other"] = "stock"
 
 
 class InstrumentPage(ApiModel):
@@ -67,6 +68,8 @@ class BarView(ApiModel):
     volume: float
     amount: float | None
     turnover_rate: float | None
+    trade_status: str = "trading"
+    unit_contract_version: str = "cn-equity-v1"
 
 
 class BarSeries(ApiModel):
@@ -185,13 +188,26 @@ class DataRefreshJobCreate(ApiModel):
     force: bool = False
 
 
+class DailyPreparePayload(StrictPayload):
+    lookback_days: int = Field(default=10, ge=1, le=3650)
+    run_screeners: bool = False
+    screening_preset: Literal["conservative", "balanced", "aggressive"] = "balanced"
+
+
+class DailyPrepareJobCreate(ApiModel):
+    kind: Literal["daily.prepare"]
+    payload: DailyPreparePayload = Field(default_factory=DailyPreparePayload)
+    force: bool = False
+
+
 JobCreate = Annotated[
     EmptyJobCreate
     | RefreshJobCreate
     | ScanJobCreate
     | BatchAnalysisJobCreate
     | StockAnalysisJobCreate
-    | DataRefreshJobCreate,
+    | DataRefreshJobCreate
+    | DailyPrepareJobCreate,
     Field(discriminator="kind"),
 ]
 
@@ -211,6 +227,10 @@ class JobView(ApiModel):
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    heartbeat_at: datetime | None = None
+    current_stage: str | None = None
+    checkpoint: dict[str, Any] | None = None
+    failure_summary: str | None = None
 
 
 class JobItemView(ApiModel):
@@ -265,12 +285,24 @@ class WatchlistItemInput(ApiModel):
     instrument_id: int
     note: str | None = None
     tag_names: list[str] = Field(default_factory=list)
+    thesis: str | None = None
+    confirmation_trigger: str | None = None
+    invalidation_condition: str | None = None
+    next_action: str | None = None
+    next_review_date: date | None = None
+    research_status: Literal["pending", "watching", "confirmed", "invalidated"] = "watching"
 
 
 class WatchlistItemUpdate(ApiModel):
     note: str | None = None
     tag_names: list[str] = Field(default_factory=list)
     position: int | None = Field(default=None, ge=0)
+    thesis: str | None = None
+    confirmation_trigger: str | None = None
+    invalidation_condition: str | None = None
+    next_action: str | None = None
+    next_review_date: date | None = None
+    research_status: Literal["pending", "watching", "confirmed", "invalidated"] = "watching"
 
 
 class WatchlistItemView(ApiModel):
@@ -279,6 +311,12 @@ class WatchlistItemView(ApiModel):
     position: int
     note: str | None
     tags: list[str]
+    thesis: str | None = None
+    confirmation_trigger: str | None = None
+    invalidation_condition: str | None = None
+    next_action: str | None = None
+    next_review_date: date | None = None
+    research_status: Literal["pending", "watching", "confirmed", "invalidated"] = "watching"
 
 
 class WatchlistView(ApiModel):
@@ -296,6 +334,7 @@ class ScheduleUpdate(ApiModel):
         "data.refresh",
         "screen.hot",
         "screen.smart",
+        "daily.prepare",
     ]
     hour: int = Field(ge=0, le=23)
     minute: int = Field(ge=0, le=59)
@@ -343,6 +382,12 @@ class DataHealthView(ApiModel):
     status: Literal["fresh", "partial", "stale", "missing"]
     checked_at: datetime
     expected_trade_date: date | None = None
+    decision_usable: bool = False
+    as_of_trade_date: date | None = None
+    last_full_refresh: datetime | None = None
+    blocking_reasons: list[str] = Field(default_factory=list)
+    provider_summary: dict[str, Any] = Field(default_factory=dict)
+    recommended_action: str | None = None
     database_backend: str
     backup_mode: Literal["application", "external_required"]
     categories: list[DataHealthCategory]

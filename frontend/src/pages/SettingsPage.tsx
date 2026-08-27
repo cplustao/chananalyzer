@@ -1,20 +1,36 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, CalendarClock, CircleCheck, CircleX, Database, KeyRound, Play, Save, Server, Wifi } from "lucide-react"
+import { Activity, AlertTriangle, CalendarClock, CircleCheck, CircleX, Database, KeyRound, Play, Save, Server, Wifi } from "lucide-react"
 import { ErrorPanel, LoadingPanel, PageHeader, StatCard } from "@/components/common"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { useDailyPrepare } from "@/hooks/useDailyPrepare"
 import { api, post, put } from "@/lib/api"
 import { DATA_COUNT_LABELS, SECRET_LABELS, systemLabel } from "@/lib/labels"
 import type { BackupList, BackupResult, DataHealth, SystemStatus } from "@/types/api"
 
 type Secret = { key: string; configured: boolean; source: string }
 type ConnectionTest = { key: string; ok: boolean; message: string; latency_ms: number }
+type ReliabilityReport = {
+  target_days: number
+  observed_days: number
+  passed_days: number
+  pass_rate: number
+  average_coverage: number
+  burn_in_complete: boolean
+  items: Array<{
+    trade_date: string
+    decision_usable: boolean
+    coverage_rate?: number | null
+    status: string
+    blocking_reasons: string[]
+  }>
+}
 type AutomationSchedule = {
   id: string
   key: string
-  job_kind: "market_radar.refresh" | "limit_up.refresh" | "ipo.refresh" | "data.refresh" | "screen.hot" | "screen.smart"
+  job_kind: "market_radar.refresh" | "limit_up.refresh" | "ipo.refresh" | "data.refresh" | "screen.hot" | "screen.smart" | "daily.prepare"
   hour: number
   minute: number
   weekdays: number[]
@@ -32,6 +48,7 @@ export function SettingsPage() {
   return (
     <div className="page-stack">
       <PageHeader title="设置" description="查看中文化运行状态，并安全更新数据源与 AI 服务密钥。" help="deployment" />
+      <div className="settings-section-title"><h2>数据与自动化</h2><p>先确保行情和每日任务可用，再进行研究。</p></div>
       {status.isLoading ? <LoadingPanel /> : null}
       {status.error ? <ErrorPanel error={status.error} /> : null}
       {status.data ? (
@@ -76,7 +93,9 @@ export function SettingsPage() {
         <div className="schedule-list">
           {schedules.data?.map((item) => <ScheduleRow key={`${item.id}-${item.updated_at}`} item={item} />)}
         </div>
-      </section>      <section className="panel">
+      </section>
+      <div className="settings-section-title"><h2>高级设置</h2><p>密钥、外部服务和部署参数。</p></div>
+      <section className="panel">
         <div className="panel-title"><span><KeyRound size={17} />密钥与外部服务</span><small>已保存的明文永不回显；留空不会覆盖原值</small></div>
         <div className="secret-list">
           {secrets.data?.map((item) => <SecretRow key={item.key} item={item} />)}
@@ -89,7 +108,9 @@ export function SettingsPage() {
 
 function DataReliabilitySettings() {
   const client = useQueryClient()
+  const dailyPrepare = useDailyPrepare()
   const health = useQuery({ queryKey: ["data-health"], queryFn: () => api<DataHealth>("/system/data-health") })
+  const reliability = useQuery({ queryKey: ["reliability-report", 10], queryFn: () => api<ReliabilityReport>("/system/reliability-report?days=10") })
   const backups = useQuery({ queryKey: ["backups"], queryFn: () => api<BackupList>("/system/backups") })
   const create = useMutation({
     mutationFn: () => post<BackupResult>("/system/backups", {}),
@@ -97,23 +118,41 @@ function DataReliabilitySettings() {
   })
   const verify = useMutation({ mutationFn: (name: string) => post<BackupResult>(`/system/backups/${name}/verify`, {}) })
   const labels: Record<string, string> = { fresh: "新鲜", partial: "部分可用", stale: "已过期", missing: "缺失" }
+  const categoryLabels: Record<string, string> = { master_data: "股票主数据", daily_bars: "日线行情", trading_calendar: "交易日历", limit_up: "涨停数据", ipo: "新股数据", radar: "市场雷达", ai: "AI 配置" }
   const healthLabel = health.isLoading ? "检查中" : health.isError ? "检查失败" : labels[health.data?.status ?? "missing"]
   const healthTone = health.data?.status ?? (health.isError ? "error" : "checking")
   return (
     <section className="settings-grid reliability-settings">
       <article className="panel">
         <div className="panel-title"><span><Database size={17} />数据健康</span><Badge variant="outline" className={`status-${healthTone}`}>{healthLabel}</Badge></div>
+        {health.data && !health.data.decision_usable ? <div className="setup-guide" role="status" aria-live="polite"><strong>{dailyPrepare.isPreparing ? "今日数据正在准备" : health.data.last_full_refresh ? "今日数据尚未就绪" : "首次准备尚未完成"}</strong><p>{dailyPrepare.activeJob?.message ?? health.data.recommended_action ?? "依次完成主数据、交易日历、日线、涨停和雷达准备。"}</p><div>{health.data.categories.filter((item) => item.affects_overall).map((item) => <Badge key={item.key} variant="outline" className={`status-${item.status}`}>{categoryLabels[item.key] ?? item.key} · {item.status === "fresh" ? "完成" : "待处理"}</Badge>)}</div><Button size="sm" onClick={dailyPrepare.submit} disabled={dailyPrepare.isPreparing} aria-busy={dailyPrepare.isPreparing}>{dailyPrepare.isPreparing ? <Activity className="spin" /> : <Play />}{dailyPrepare.buttonLabel === "准备今日数据" ? "一键准备今日数据" : dailyPrepare.buttonLabel}</Button></div> : null}
         {health.isLoading ? <LoadingPanel rows={4} /> : null}
         {health.error ? <ErrorPanel error={health.error} /> : null}
         <div className="health-list">
           {health.data?.categories.map((item) => (
             <div key={item.key} className="health-row">
-              <span><strong>{item.key}</strong><small>{item.source ?? "未记录来源"}{item.single_source ? " · 单源" : ""}{item.affects_overall ? "" : " · 独立模块"}</small></span>
+              <span><strong>{categoryLabels[item.key] ?? item.key}</strong><small>{item.source ?? "未记录来源"}{item.single_source ? " · 单源" : ""}{item.affects_overall ? "" : " · 独立模块"}</small></span>
               <span><Badge variant="outline" className={`status-${item.status}`}>{labels[item.status]}</Badge><small>{item.coverage_rate == null ? "" : `覆盖 ${Math.round(item.coverage_rate * 100)}%`}</small></span>
               {item.recommendation ? <p>{item.recommendation}</p> : null}
             </div>
           ))}
         </div>
+      </article>
+      <article className="panel">
+        <div className="panel-title"><span><Activity size={17} />免费源稳定性试运行</span><Badge variant="outline">{reliability.data?.observed_days ?? 0}/{reliability.data?.target_days ?? 10} 个交易日</Badge></div>
+        {reliability.isLoading ? <LoadingPanel rows={3} /> : null}
+        {reliability.error ? <ErrorPanel error={reliability.error} /> : null}
+        {reliability.data ? <>
+          <progress className="reliability-progress" max={reliability.data.target_days} value={reliability.data.observed_days} aria-label="免费数据源连续试运行进度" />
+          <div className="reliability-summary">
+            <span><strong>{reliability.data.passed_days}/{reliability.data.observed_days || 0}</strong><small>已观察交易日通过</small></span>
+            <span><strong>{Math.round(reliability.data.average_coverage * 10000) / 100}%</strong><small>平均行情覆盖率</small></span>
+          </div>
+          <p className={reliability.data.burn_in_complete ? "connection-ok" : "muted"}>{reliability.data.burn_in_complete ? "连续十个交易日试运行已通过。" : `仍需累计 ${Math.max(0, reliability.data.target_days - reliability.data.observed_days)} 个交易日；每日准备完成后自动记录。`}</p>
+          <div className="health-list">
+            {reliability.data.items.slice(0, 5).map((item) => <div className="health-row" key={item.trade_date}><span><strong>{item.trade_date}</strong><small>{item.blocking_reasons.length ? `阻断：${item.blocking_reasons.map((key) => categoryLabels[key] ?? key).join("、")}` : "无阻断项"}</small></span><span><Badge variant="outline" className={`status-${item.status}`}>{item.decision_usable ? "通过" : "未通过"}</Badge><small>覆盖 {Math.round((item.coverage_rate ?? 0) * 10000) / 100}%</small></span></div>)}
+          </div>
+        </> : null}
       </article>
       <article className="panel">
         <div className="panel-title"><span><Server size={17} />备份</span><small>{backups.data?.mode === "external_required" ? "外部流程" : "SQLite 在线快照"}</small></div>
@@ -168,6 +207,7 @@ function SecretRow({ item }: { item: Secret }) {
 }
 const WEEKDAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"]
 const SCHEDULE_LABELS: Record<AutomationSchedule["job_kind"], string> = {
+  "daily.prepare": "工作日每日数据准备",
   "data.refresh": "工作日行情更新",
   "limit_up.refresh": "工作日涨停事件刷新",
   "ipo.refresh": "工作日新股数据刷新",
@@ -176,6 +216,7 @@ const SCHEDULE_LABELS: Record<AutomationSchedule["job_kind"], string> = {
   "market_radar.refresh": "工作日市场雷达刷新",
 }
 const SCHEDULE_DESCRIPTIONS: Record<AutomationSchedule["job_kind"], string> = {
+  "daily.prepare": "按依赖顺序完成主数据、日线、质量门禁、涨停和市场雷达",
   "data.refresh": "同步全部在市股票的最新行情",
   "limit_up.refresh": "同步当日涨停原始事件，供市场雷达计算使用",
   "ipo.refresh": "同步过去一年及未来 90 天已公布上市日期的新股记录",

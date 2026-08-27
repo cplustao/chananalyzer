@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertTriangle, BookmarkPlus, Check, Database, RefreshCw, Sparkles } from "lucide-react"
-import { useSearchParams } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import {
   CandlestickChart,
   type ChanLayerVisibility,
@@ -202,6 +202,7 @@ export function StocksPage() {
     analyze.mutate({ force: true, includeAi: true })
   }
   const isWatched = watchlist.data?.items.some((item) => item.instrument.id === selectedId) ?? false
+  const selectedWatchItem = watchlist.data?.items.find((item) => item.instrument.id === selectedId)
   const selectStock = (instrumentId: number) => setParams({ id: String(instrumentId) })
   const warmupStock = (instrumentId: number) => {
     if (instrumentId === selectedId) return
@@ -253,7 +254,7 @@ export function StocksPage() {
                 title={isCanonicalStock ? "数据过期时先更新本股，再生成分析师与独立风控复核报告" : "请选择六位 A 股代码后再进行 AI 分析"}
               >
                 <Sparkles className={(analysisActive && analysisMode === "ai") || (refreshActive && continueAiAfterRefresh) ? "spin" : ""} />
-                {refreshActive && continueAiAfterRefresh ? "????? ? " : null}
+                {refreshActive && continueAiAfterRefresh ? "先更新数据 · " : null}
                 {analysisActive && analysisMode === "ai" ? "AI 分析中" : "AI 分析"}
               </Button>
             </>
@@ -300,27 +301,32 @@ export function StocksPage() {
             {stockNeedsRefresh ? (
               <section className="radar-notice" role="note">
                 <AlertTriangle />
-                <div><strong>????????</strong><p>????? {latestBarDate ?? "???"}?AI ??????? {expectedTradeDate}??? AI ????????????</p></div>
+                <div><strong>本股行情尚未更新至目标交易日</strong><p>当前截至 {latestBarDate ?? "暂无数据"}，目标为 {expectedTradeDate}。启动 AI 分析时会先更新本股行情，避免基于过期数据生成报告。</p></div>
               </section>
             ) : null}
             {analyze.error ? (
               <section className="radar-notice" role="alert">
                 <AlertTriangle />
-                <div><strong>AI ??????</strong><p>{analyze.error.message}</p></div>
+                <div><strong>AI 分析提交失败</strong><p>{analyze.error.message}</p></div>
               </section>
             ) : null}
             {analysisMode === "ai" && analysisJob.data?.status === "partial" ? (
               <section className="radar-notice" role="alert">
                 <AlertTriangle />
-                <div><strong>AI ???????</strong><p>??????????????????????????? AI ??????</p></div>
+                <div><strong>AI 分析仅部分完成</strong><p>确定性缠论结果已经保存，但 AI 报告或独立风控复核未全部通过校验，请在任务中心查看失败原因。</p></div>
               </section>
             ) : null}
             {analysisMode === "ai" && ["partial", "failed", "cancelled"].includes(refreshJob.data?.status ?? "") ? (
               <section className="radar-notice" role="alert">
                 <AlertTriangle />
-                <div><strong>???????????? AI</strong><p>{refreshJob.data?.error ?? refreshJob.data?.message ?? "??????????????"}</p></div>
+                <div><strong>行情更新失败，已停止 AI 分析</strong><p>{refreshJob.data?.error ?? refreshJob.data?.message ?? "请检查数据源后重试。"}</p></div>
               </section>
             ) : null}
+            <section className="stock-research-summary">
+              <article className="panel"><div className="panel-title">事实数据</div><p>行情截至 {latestBarDate ?? "—"} · {bars.data.adjustment === "QFQ" ? "前复权" : "不复权"}</p><p>最近收盘 {bars.data.items.at(-1)?.close?.toFixed(2) ?? "—"} · 成交量 {bars.data.items.at(-1)?.volume?.toLocaleString() ?? "—"} 股</p></article>
+              <article className="panel"><div className="panel-title">规则推导</div><p>笔 {analysis?.bi_list?.length ?? 0} · 线段 {analysis?.seg_list?.length ?? 0} · 中枢 {analysis?.zs_list?.length ?? 0}</p><p>买点 {(analysis?.buy_signals?.length ?? 0)} · 卖点 {(analysis?.sell_signals?.length ?? 0)} · 背离 {divergences.length}</p></article>
+              <article className="panel"><div className="panel-title"><span>个人研究计划</span>{selectedWatchItem ? <Button asChild variant="ghost" size="sm"><Link to="/watchlist">编辑</Link></Button> : null}</div>{selectedWatchItem ? <><p><strong>逻辑：</strong>{selectedWatchItem.thesis || selectedWatchItem.note || "待补充"}</p><p><strong>确认：</strong>{selectedWatchItem.confirmation_trigger || "待补充"}</p><p><strong>失效：</strong>{selectedWatchItem.invalidation_condition || "待补充"}</p><p><strong>下一步：</strong>{selectedWatchItem.next_action || "待补充"}</p></> : <p className="muted">加入自选后可记录投资逻辑、确认条件、失效条件和复盘动作。</p>}</article>
+            </section>
             <section className="panel">
               <div className="panel-title kline-title">
                 <span>

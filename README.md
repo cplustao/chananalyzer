@@ -1,10 +1,26 @@
 # ChanAnalyzer v2
 
-ChanAnalyzer v2 是面向个人研究、可部署到单台服务器的 A 股缠论研究工作台。当前主工程已经完成 v2 收敛：React 前端、FastAPI API、独立 Worker、SQLAlchemy/Alembic 数据库，以及不访问数据库和网络的纯缠论核心。
+ChanAnalyzer v2 是面向个人 A 股投资者、可部署到单台服务器的盘后研究与决策辅助工作台。系统将数据准备、市场判断、候选筛选、个股验证、自选研究计划和复盘串成一条可追溯流程，并通过数据健康门禁阻止过期或不完整行情产生可执行结论。
 
 ## 项目预览
 
+### 今日研究工作台
+
+集中展示数据是否可用于决策、市场事实与反证、候选股票、自选复盘和待办事项。
+
+![ChanAnalyzer 今日研究工作台](docs/images/today-research.png)
+
+### 市场雷达
+
+基于最新完整交易日生成市场状态、证据与反证，并在数据门禁通过后展示下一交易日的研究仓位区间。
+
 ![ChanAnalyzer 市场雷达](docs/images/market-radar.png)
+
+### 个股研究
+
+在同一工作区查看前复权 K 线、MACD、缠论结构、事实数据、规则推导和个人研究计划。
+
+![ChanAnalyzer 个股研究](docs/images/stock-research.png)
 
 ## 当前架构
 
@@ -22,7 +38,7 @@ FastAPI -> Services -> Repositories -> SQLAlchemy -> SQLite / PostgreSQL
 - `backend/app/api`：鉴权、参数校验、序列化和健康检查。
 - `backend/app/services`：市场雷达、个股、扫描、涨停、新股、行情同步和任务编排。
 - `backend/app/repositories`：数据库访问边界。
-- `backend/app/providers`：Tushare 与 OpenAI 兼容 AI 服务。
+- `backend/app/providers`：Tushare、BaoStock、AKShare 降级行情源与 OpenAI 兼容 AI 服务。
 - `backend/app/chan_core`：内存算法接口；上游算法固定在 `vendor`，禁止网络和数据库访问。
 - `backend/app/worker`：持久化后台任务、重试、取消和恢复。
 - `frontend`：统一深色研究终端、左侧导航、任务中心和帮助中心。
@@ -30,12 +46,15 @@ FastAPI -> Services -> Repositories -> SQLAlchemy -> SQLite / PostgreSQL
 
 ## 功能
 
-- 市场雷达：市场结论、证据/反证、仓位曲线和历史版本。
-- 个股研究：自选研究队列、标签筛选、K 线、笔/线段/中枢/买卖点/背离和分析历史。
+- 今日研究：数据决策门禁、市场事实与反证、候选变化、自选复盘和研究待办。
+- 每日数据准备：交易日、主数据、日线质量检查、涨停和市场雷达按依赖顺序执行，支持去重、断点恢复与任务进度。
+- 数据可靠性：统一成交量/成交额单位，记录数据源与复权类型，监控覆盖率、完整刷新时间和阻断原因。
+- 市场雷达：市场结论、证据/反证、风险仓位曲线和历史版本。
+- 个股研究：自选研究队列、标签筛选、K 线、笔/线段/中枢/买卖点/背离、事实与规则结论和分析历史。
 - 市场筛选：热门榜单与按条件组合的智能筛选。
 - 缠论扫描：买点、卖点和持久化扫描结果。
 - 涨停与新股分析：日期区间、批量任务、评分和版本化 AI 报告。
-- 自选股：列表内双击编辑标签与研究备注，并与个股研究队列联动。
+- 自选研究计划：记录投资逻辑、确认条件、失效条件、下一步动作、复盘日期和研究状态。
 - 设置与帮助：中文配置、Secret 脱敏、数据源测试和页面级帮助。
 
 ## 本地启动

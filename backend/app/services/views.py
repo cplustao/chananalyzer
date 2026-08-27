@@ -14,6 +14,7 @@ def instrument_view(item: Instrument) -> InstrumentView:
         industry=item.industry.name if item.industry else None,
         area=item.area,
         status=item.status,
+        asset_type=item.asset_type,
     )
 
 
@@ -29,6 +30,12 @@ def watchlist_view(item: Watchlist) -> WatchlistView:
                 position=entry.position,
                 note=entry.note,
                 tags=[tag.name for tag in entry.tags],
+                thesis=entry.thesis,
+                confirmation_trigger=entry.confirmation_trigger,
+                invalidation_condition=entry.invalidation_condition,
+                next_action=entry.next_action,
+                next_review_date=entry.next_review_date,
+                research_status=entry.research_status,
             )
             for entry in item.items
         ],

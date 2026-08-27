@@ -30,3 +30,7 @@
   font-size: 11px;
   line-height: 1.65;
 }
+.filter-panel { display: flex; gap: 10px; align-items: center; }
+.watchlist-status-filter { width: 150px; }
+.editor-form { overflow-y: auto; padding-bottom: 24px; }
+@media (max-width: 680px) { .filter-panel { align-items: stretch; flex-direction: column; } .watchlist-status-filter { width: 100%; } }

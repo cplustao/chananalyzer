@@ -8,6 +8,9 @@ const AppShell = lazy(() =>
 const RadarPage = lazy(() =>
   import("@/pages/RadarPage").then((module) => ({ default: module.RadarPage })),
 )
+const TodayPage = lazy(() =>
+  import("@/pages/TodayPage").then((module) => ({ default: module.TodayPage })),
+)
 const StocksPage = lazy(() =>
   import("@/pages/StocksPage").then((module) => ({ default: module.StocksPage })),
 )
@@ -46,8 +49,9 @@ const router = createBrowserRouter([
     path: "/",
     element: <AppErrorBoundary>{page(<AppShell />)}</AppErrorBoundary>,
     children: [
-      { index: true, element: <Navigate to="/radar" replace /> },
-      { path: "decision", element: <Navigate to="/radar" replace /> },
+      { index: true, element: <Navigate to="/today" replace /> },
+      { path: "decision", element: <Navigate to="/today" replace /> },
+      { path: "today", element: page(<TodayPage />) },
       { path: "radar", element: page(<RadarPage />) },
       { path: "stocks", element: page(<StocksPage />) },
       { path: "watchlist", element: page(<WatchlistPage />) },
@@ -57,7 +61,7 @@ const router = createBrowserRouter([
       { path: "screeners", element: page(<ScansPage screener />) },
       { path: "help", element: page(<HelpPage />) },
       { path: "settings", element: page(<SettingsPage />) },
-      { path: "*", element: <Navigate to="/radar" replace /> },
+      { path: "*", element: <Navigate to="/today" replace /> },
     ],
   },
 ])

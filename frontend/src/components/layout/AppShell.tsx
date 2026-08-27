@@ -8,9 +8,12 @@ import {
   CircleDot,
   Filter,
   Gauge,
+  LoaderCircle,
+  CalendarCheck2,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  Play,
   Radar,
   Search,
   Settings,
@@ -31,11 +34,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { api, post } from "@/lib/api"
 import { useDebouncedValue } from "@/hooks/useDebouncedValue"
+import { useDailyPrepare } from "@/hooks/useDailyPrepare"
 import { jobKindLabel, jobStatusLabel } from "@/lib/labels"
 import type { DataHealth, InstrumentPage, Job, JobItem, JobStages } from "@/types/api"
 
 const groups = [
-  { label: "市场环境", items: [{ to: "/radar", label: "市场雷达", icon: Radar }] },
+  { label: "每日研究", items: [{ to: "/today", label: "今日研究", icon: CalendarCheck2 }, { to: "/radar", label: "市场雷达", icon: Radar }] },
   {
     label: "个股研究",
     items: [
@@ -426,6 +430,7 @@ function JobCenter() {
 }
 export function AppShell() {
   const [collapsed, setCollapsed] = useState(false)
+  const dailyPrepare = useDailyPrepare()
   const health = useQuery({
     queryKey: ["data-health"],
     queryFn: () => api<DataHealth>("/system/data-health"),
@@ -491,7 +496,17 @@ export function AppShell() {
                 ))}
               </div>
             ) : <p className="health-all-fresh">所有核心模块均可用。</p>}
-            {health.data ? <Button asChild variant="outline" size="sm"><NavLink to="/settings">查看刷新建议</NavLink></Button> : null}
+            {health.data && !health.data.decision_usable ? (
+              <>
+                <Button type="button" variant="outline" size="sm" onClick={dailyPrepare.submit} disabled={dailyPrepare.isPreparing} aria-busy={dailyPrepare.isPreparing}>
+                  {dailyPrepare.isPreparing ? <LoaderCircle className="spin" /> : <Play size={14} />}
+                  {dailyPrepare.isPreparing ? dailyPrepare.buttonLabel : "立即更新今日数据"}
+                </Button>
+                <p className="health-preparation-status" role="status" aria-live="polite">
+                  {dailyPrepare.activeJob?.message ?? (dailyPrepare.isPreparing ? "正在确认后台任务…" : "更新将在后台运行，离开当前页面不会中断。")}
+                </p>
+              </>
+            ) : null}
           </PopoverContent>
         </Popover>
         <JobCenter />
