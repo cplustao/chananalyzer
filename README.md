@@ -22,6 +22,39 @@ ChanAnalyzer v2 是面向个人 A 股投资者、可部署到单台服务器的�
 
 ![ChanAnalyzer 个股研究](docs/images/stock-research.png)
 
+<details>
+<summary>查看更多主要页面（自选股、事件分析、策略工具与系统页）</summary>
+
+### 自选股研究计划
+
+![ChanAnalyzer 自选股](docs/images/watchlist.png)
+
+### 涨停分析
+
+![ChanAnalyzer 涨停分析](docs/images/limit-ups.png)
+
+### 新股分析
+
+![ChanAnalyzer 新股分析](docs/images/ipos.png)
+
+### 缠论扫描
+
+![ChanAnalyzer 缠论扫描](docs/images/chan-scans.png)
+
+### 市场筛选
+
+![ChanAnalyzer 市场筛选](docs/images/market-screener.png)
+
+### 帮助中心
+
+![ChanAnalyzer 帮助中心](docs/images/help-center.png)
+
+### 系统设置
+
+![ChanAnalyzer 系统设置](docs/images/settings.png)
+
+</details>
+
 ## 当前架构
 
 ```text
