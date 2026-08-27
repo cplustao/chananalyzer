@@ -2,6 +2,10 @@
 
 ChanAnalyzer v2 是面向个人研究、可部署到单台服务器的 A 股缠论研究工作台。当前主工程已经完成 v2 收敛：React 前端、FastAPI API、独立 Worker、SQLAlchemy/Alembic 数据库，以及不访问数据库和网络的纯缠论核心。
 
+## 项目预览
+
+![ChanAnalyzer 市场雷达](docs/images/market-radar.png)
+
 ## 当前架构
 
 ```text
