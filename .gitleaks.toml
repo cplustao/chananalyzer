@@ -19,4 +19,5 @@ regexTarget = "match"
 regexes = [
   '''replace-with-a-stable-random-secret''',
   '''your[-_a-z]*token''',
+  '''sqlite:///D:/path/to/chananalyzer/data/chan_v2\.db''',
 ]

@@ -33,6 +33,7 @@ dev = [
   "mypy>=1.11,<2",
   "bandit>=1.8,<2",
   "pip-audit>=2.9,<3",
+  "setuptools>=83,<84",
 ]
 
 [project.scripts]
@@ -64,4 +65,5 @@ per-file-ignores = { "tests/backend/conftest.py" = ["E402"] }
 python_version = "3.11"
 check_untyped_defs = true
 warn_unused_ignores = true
+follow_imports = "skip"
 exclude = ["backend/app/chan_core/vendor"]
