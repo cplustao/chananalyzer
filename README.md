@@ -85,7 +85,7 @@ py -3.12 -m backend.app.worker.main
 
 ```dotenv
 AUTH_MODE=local
-DATABASE_URL=sqlite:///D:/path/to/chananalyzer/data/chan_v2.db
+DATABASE_URL=sqlite:///data/chan_v2.db
 API_HOST=127.0.0.1
 API_PORT=8011
 APP_SECRET_KEY=replace-with-a-stable-random-secret
