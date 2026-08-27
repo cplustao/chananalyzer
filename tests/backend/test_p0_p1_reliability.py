@@ -533,6 +533,21 @@ def test_sqlite_backup_removes_secrets_and_verifies(session, tmp_path):
         service.verify("../escape.zip")
 
 
+def test_server_backup_download_requires_explicit_opt_in(tmp_path):
+    settings = get_settings().model_copy(
+        update={
+            "environment": "server",
+            "backup_dir": tmp_path,
+            "backup_download_enabled": False,
+        }
+    )
+
+    with pytest.raises(AppError) as exc_info:
+        BackupService(settings).download_path("chan-backup-2026-08-27T00-00-00Z-1234abcd.zip")
+
+    assert exc_info.value.code == "backup_download_disabled"
+
+
 class JsonProvider:
     def __init__(self, payload: dict):
         self.payload = payload

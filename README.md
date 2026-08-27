@@ -72,7 +72,10 @@ FastAPI -> Services -> Repositories -> SQLAlchemy -> SQLite / PostgreSQL
 - `backend/app/services`：市场雷达、个股、扫描、涨停、新股、行情同步和任务编排。
 - `backend/app/repositories`：数据库访问边界。
 - `backend/app/providers`：Tushare、BaoStock、AKShare 降级行情源与 OpenAI 兼容 AI 服务。
-- `backend/app/chan_core`：内存算法接口；上游算法固定在 `vendor`，禁止网络和数据库访问。
+- `backend/app/chan_core`：内存算法接口；基于 MIT 许可的
+  [`Vespa314/chan.py`](https://github.com/Vespa314/chan.py) 保留的算法固定在
+  `vendor`，禁止网络和数据库访问。具体来源与本地改动见
+  [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 - `backend/app/worker`：持久化后台任务、重试、取消和恢复。
 - `frontend`：统一深色研究终端、左侧导航、任务中心和帮助中心。
 - `migrations`：Alembic 数据库结构迁移。
@@ -150,6 +153,14 @@ npm run test:e2e
 ```
 
 依赖以 `pyproject.toml` 为准；`requirements.txt` 用于服务器直接安装，`pylock.toml` 用于严格复现。本项目不会在未授权时运行 `npm audit`，因为该命令会把依赖元数据发送给 npm。
+
+## 数据来源与使用边界
+
+本项目只提供 Tushare、BaoStock、AKShare 等第三方数据服务的本地接入能力，不授予行情数据的再分发权。使用者应自行遵守各数据源的账号、积分、频率、缓存和展示条款；不要把本地数据库、行情快照或含个人研究记录的备份提交到仓库或作为项目发行物发布。
+
+## 许可证与来源
+
+项目自身采用 [MIT License](LICENSE)。缠论算法核心保留并修改自 MIT 许可的 [`Vespa314/chan.py`](https://github.com/Vespa314/chan.py)，完整来源、版权和本地改动说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 部署
 

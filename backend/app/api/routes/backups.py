@@ -17,7 +17,11 @@ def list_backups(
     _user: User = Depends(current_user),
 ) -> dict:
     service = BackupService(settings)
-    return {"mode": "application" if service.supported else "external_required", "items": service.list()}
+    return {
+        "mode": "application" if service.supported else "external_required",
+        "download_enabled": settings.environment != "server" or settings.backup_download_enabled,
+        "items": service.list(),
+    }
 
 
 @router.post("", status_code=201)

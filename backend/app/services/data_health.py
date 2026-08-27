@@ -126,7 +126,7 @@ class DataHealthService:
     def _provider_summary(run: IngestionRun | None) -> dict[str, Any]:
         if run is None:
             return {}
-        summary: dict[str, dict[str, int]] = {}
+        summary: dict[str, dict[str, int | float]] = {}
         for attempt in run.provider_chain or []:
             provider = str(attempt.get("provider") or "unknown")
             status = str(attempt.get("status") or "unknown")
@@ -159,7 +159,9 @@ class DataHealthService:
         cached.payload = payload
         cached.generated_at = utcnow()
         if record_sample:
-            daily = next((item for item in payload["categories"] if item["key"] == "daily_bars"), {})
+            daily: dict[str, Any] = next(
+                (item for item in payload["categories"] if item["key"] == "daily_bars"), {}
+            )
             self.session.add(
                 DataReliabilitySample(
                     trade_date=date.fromisoformat(payload["expected_trade_date"])

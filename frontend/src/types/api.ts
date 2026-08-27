@@ -314,5 +314,9 @@ export type DecisionToday = {
 }
 
 export type BackupItem = { name: string; size: number; created_at: string }
-export type BackupList = { mode: "application" | "external_required"; items: BackupItem[] }
+export type BackupList = {
+  mode: "application" | "external_required"
+  download_enabled: boolean
+  items: BackupItem[]
+}
 export type BackupResult = { name: string; valid?: boolean; manifest?: Record<string, unknown>; size?: number }

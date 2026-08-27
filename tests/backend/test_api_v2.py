@@ -17,8 +17,13 @@ from backend.app.db.models import (
 
 
 def test_health_and_system_status(client):
-    assert client.get("/health/live").json() == {"status": "alive"}
+    live = client.get("/health/live")
+    assert live.json() == {"status": "alive"}
+    assert live.headers["x-frame-options"] == "DENY"
+    assert "frame-ancestors 'none'" in live.headers["content-security-policy"]
+    assert live.headers["permissions-policy"] == "camera=(), microphone=(), geolocation=(), payment=()"
     response = client.get("/api/v1/system/status")
+    assert response.headers["cache-control"] == "no-store"
     assert response.status_code == 200
     assert response.json()["auth_mode"] == "local"
 

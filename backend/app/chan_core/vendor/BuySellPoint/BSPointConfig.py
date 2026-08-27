@@ -14,6 +14,23 @@ class CBSPointConfig:
 
 
 class CPointConfig:
+    _SETTABLE_FIELDS = frozenset({
+        "divergence_rate",
+        "min_zs_cnt",
+        "bsp1_only_multibi_zs",
+        "max_bs2_rate",
+        "macd_algo",
+        "bs1_peak",
+        "bs_type",
+        "bsp2_follow_1",
+        "bsp3_follow_1",
+        "bsp3_peak",
+        "bsp2s_follow_2",
+        "max_bsp2s_lv",
+        "strict_bsp3",
+        "bsp3a_max_zs_cnt",
+    })
+
     def __init__(self,
                  divergence_rate,
                  min_zs_cnt,
@@ -74,8 +91,12 @@ class CPointConfig:
         self.macd_algo = _d[macd_algo]
 
     def set(self, k, v):
+        if k not in self._SETTABLE_FIELDS:
+            raise ValueError(f"unsupported buy/sell point config: {k}")
         v = _parse_inf(v)
         if k == "macd_algo":
             self.SetMacdAlgo(v)
+        elif k == "bs_type":
+            self.tmp_target_types = v
         else:
-            exec(f"self.{k} = {v}")
+            setattr(self, k, v)

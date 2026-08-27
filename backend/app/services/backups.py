@@ -72,6 +72,7 @@ class BackupService:
         if not self.supported:
             return []
         self.directory.mkdir(parents=True, exist_ok=True)
+        self._restrict_permissions(self.directory, 0o700)
         return [
             {
                 "name": path.name,
@@ -89,6 +90,7 @@ class BackupService:
         if not source.is_file():
             raise AppError("backup_database_missing", "SQLite 数据库文件不存在", status_code=404)
         self.directory.mkdir(parents=True, exist_ok=True)
+        self._restrict_permissions(self.directory, 0o700)
         timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
         name = f"chan-backup-{timestamp}-{os.urandom(4).hex()}.zip"
         destination = self._path(name)
@@ -126,6 +128,7 @@ class BackupService:
                     archive.writestr("manifest.json", manifest.model_dump_json(indent=2))
                     archive.write(snapshot, "database.sqlite")
                 os.replace(pending, destination)
+                self._restrict_permissions(destination, 0o600)
             finally:
                 pending.unlink(missing_ok=True)
         return {"name": name, "manifest": manifest.model_dump(), "size": destination.stat().st_size}
@@ -204,10 +207,21 @@ class BackupService:
         }
 
     def download_path(self, name: str) -> Path:
+        if self.settings.environment == "server" and not self.settings.backup_download_enabled:
+            raise AppError(
+                "backup_download_disabled",
+                "服务器模式默认禁止通过网页下载个人研究备份",
+                status_code=403,
+            )
         path = self._path(name)
         if not path.is_file():
             raise AppError("backup_not_found", "备份不存在", status_code=404)
         return path
+
+    @staticmethod
+    def _restrict_permissions(path: Path, mode: int) -> None:
+        if os.name == "posix":
+            path.chmod(mode)
 
     @staticmethod
     def _has_table(connection: sqlite3.Connection, name: str) -> bool:

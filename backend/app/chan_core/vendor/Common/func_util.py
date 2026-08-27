@@ -46,9 +46,10 @@ def str2float(s):
 
 
 def _parse_inf(v):
-    if type(v) == float:
-        if v == float("inf"):
-            v = 'float("inf")'
-        if v == float("-inf"):
-            v = 'float("-inf")'
+    if isinstance(v, str):
+        normalized = v.strip().lower().replace("'", '"')
+        if normalized in {"inf", "+inf", "infinity", "+infinity", 'float("inf")'}:
+            return float("inf")
+        if normalized in {"-inf", "-infinity", 'float("-inf")'}:
+            return float("-inf")
     return v

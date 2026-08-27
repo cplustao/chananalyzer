@@ -1,0 +1,22 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "runtime-user-token"
+description = "Runtime user/session token committed as JSON"
+regex = '''(?i)"token"\s*:\s*"[a-z0-9_./+\-=]{32,}"'''
+keywords = ["token"]
+
+[[rules]]
+id = "local-windows-database-path"
+description = "Local absolute database path in public documentation"
+regex = '''(?i)sqlite:///+[a-z]:[/\\][^\s"']+'''
+keywords = ["sqlite"]
+
+[allowlist]
+description = "Documented placeholders"
+regexTarget = "match"
+regexes = [
+  '''replace-with-a-stable-random-secret''',
+  '''your[-_a-z]*token''',
+]

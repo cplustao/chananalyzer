@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     )
     admin_username: str | None = None
     backup_dir: Path = PROJECT_ROOT / "data" / "backups"
+    backup_download_enabled: bool = False
     admin_password: str | None = None
     app_secret_key: str | None = None
     tushare_token: SecretStr | None = None

@@ -87,6 +87,18 @@ async def request_context(request: Request, call_next):
     response.headers["X-Request-ID"] = request_id
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; "
+        "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+    )
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    if settings_value.environment == "server":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 

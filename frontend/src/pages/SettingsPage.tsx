@@ -161,11 +161,12 @@ function DataReliabilitySettings() {
         ) : (
           <>
             <Button onClick={() => create.mutate()} disabled={create.isPending}>{create.isPending ? "创建中…" : "创建脱敏备份"}</Button>
+            {backups.data && !backups.data.download_enabled ? <p className="lead-small">服务器模式已禁止网页下载；请在服务器的加密备份目录中管理文件。</p> : null}
             <div className="backup-list">
               {backups.data?.items.map((item) => (
                 <div key={item.name}>
                   <span><strong>{item.name}</strong><small>{(item.size / 1024 / 1024).toFixed(1)} MB · {new Date(item.created_at).toLocaleString("zh-CN", { hour12: false })}</small></span>
-                  <span className="backup-actions"><Button size="sm" variant="outline" onClick={() => verify.mutate(item.name)}>校验</Button><Button size="sm" variant="ghost" asChild><a href={`/api/v1/system/backups/${item.name}/download`}>下载</a></Button></span>
+                  <span className="backup-actions"><Button size="sm" variant="outline" onClick={() => verify.mutate(item.name)}>校验</Button>{backups.data?.download_enabled ? <Button size="sm" variant="ghost" asChild><a href={`/api/v1/system/backups/${item.name}/download`}>下载</a></Button> : null}</span>
                 </div>
               ))}
             </div>

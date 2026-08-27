@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Mapping
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -23,7 +24,7 @@ def _response(
     code: str,
     message: str,
     details=None,
-    headers: dict[str, str] | None = None,
+    headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
     payload = {"code": code, "message": message, "request_id": _request_id(request)}
     if details is not None:

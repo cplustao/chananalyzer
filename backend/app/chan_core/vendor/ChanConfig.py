@@ -129,28 +129,26 @@ class CChanConfig:
         self.seg_bs_point_conf.s_conf.set("bsp1_only_multibi_zs", False)
 
         for k, v in conf.items():
-            if isinstance(v, str):
-                v = f'"{v}"'
             v = _parse_inf(v)
             if k.endswith("-buy"):
                 prop = k.replace("-buy", "")
-                exec(f"self.bs_point_conf.b_conf.set('{prop}', {v})")
+                self.bs_point_conf.b_conf.set(prop, v)
             elif k.endswith("-sell"):
                 prop = k.replace("-sell", "")
-                exec(f"self.bs_point_conf.s_conf.set('{prop}', {v})")
+                self.bs_point_conf.s_conf.set(prop, v)
             elif k.endswith("-segbuy"):
                 prop = k.replace("-segbuy", "")
-                exec(f"self.seg_bs_point_conf.b_conf.set('{prop}', {v})")
+                self.seg_bs_point_conf.b_conf.set(prop, v)
             elif k.endswith("-segsell"):
                 prop = k.replace("-segsell", "")
-                exec(f"self.seg_bs_point_conf.s_conf.set('{prop}', {v})")
+                self.seg_bs_point_conf.s_conf.set(prop, v)
             elif k.endswith("-seg"):
                 prop = k.replace("-seg", "")
-                exec(f"self.seg_bs_point_conf.b_conf.set('{prop}', {v})")
-                exec(f"self.seg_bs_point_conf.s_conf.set('{prop}', {v})")
+                self.seg_bs_point_conf.b_conf.set(prop, v)
+                self.seg_bs_point_conf.s_conf.set(prop, v)
             elif k in args:
-                exec(f"self.bs_point_conf.b_conf.set({k}, {v})")
-                exec(f"self.bs_point_conf.s_conf.set({k}, {v})")
+                self.bs_point_conf.b_conf.set(k, v)
+                self.bs_point_conf.s_conf.set(k, v)
             else:
                 raise CChanException(f"unknown para = {k}", ErrCode.PARA_ERROR)
         self.bs_point_conf.b_conf.parse_target_type()
