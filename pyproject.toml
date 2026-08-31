@@ -33,7 +33,7 @@ dev = [
   "mypy>=1.11,<2",
   "bandit>=1.8,<2",
   "pip-audit>=2.9,<3",
-  "setuptools>=83,<84",
+  "setuptools>=83,<85",
 ]
 
 [project.scripts]
