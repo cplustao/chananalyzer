@@ -52,7 +52,7 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: pylock.toml
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -87,7 +87,7 @@ jobs:
         project: [desktop-chromium, mobile-chromium]
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
