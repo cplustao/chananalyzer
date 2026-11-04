@@ -6,17 +6,17 @@ from sqlalchemy.orm import Session
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.security import ensure_identity, resolve_session
 from backend.app.db.models import User
-from backend.app.db.session import get_session
+from backend.app.db.session import SessionLocal, get_session
 
 
 def settings_dep() -> Settings:
     return get_settings()
 
 
-def current_user(
+def _resolve_current_user(
     request: Request,
-    session: Session = Depends(get_session),
-    settings: Settings = Depends(settings_dep),
+    session: Session,
+    settings: Settings,
 ) -> User:
     if settings.auth_mode == "local":
         client_host = request.client.host if request.client else ""
@@ -31,3 +31,19 @@ def current_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     return user
+
+
+def current_user(
+    request: Request,
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(settings_dep),
+) -> User:
+    return _resolve_current_user(request, session, settings)
+
+
+def current_user_for_stream(
+    request: Request,
+    settings: Settings = Depends(settings_dep),
+) -> User:
+    with SessionLocal() as session:
+        return _resolve_current_user(request, session, settings)

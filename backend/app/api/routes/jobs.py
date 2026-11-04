@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.api.deps import current_user, settings_dep
+from backend.app.api.deps import current_user, current_user_for_stream, settings_dep
 from backend.app.api.schemas import (
     JobAccepted,
     JobCreate,
@@ -242,7 +242,7 @@ def job_events(
     job_id: str,
     request: Request,
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
-    _user: User = Depends(current_user),
+    _user: User = Depends(current_user_for_stream),
 ) -> StreamingResponse:
     try:
         initial_sequence = max(0, int(last_event_id or 0))
