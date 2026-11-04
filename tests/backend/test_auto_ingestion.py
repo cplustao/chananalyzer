@@ -6,11 +6,15 @@ import pytest
 from sqlalchemy import select
 
 from backend.app.db.models import Bar, Instrument, Job
-from backend.app.domain.daily_refresh import INITIAL_HISTORY_DAYS, plan_daily_refresh
+from backend.app.domain.daily_refresh import (
+    INITIAL_HISTORY_DAYS,
+    adjustment_base_changed,
+    plan_daily_refresh,
+)
 from backend.app.providers.market_data import CalendarSession, MarketBar
 from backend.app.repositories.ingestion import IngestionRepository
 from backend.app.repositories.jobs import JobRepository
-from backend.app.services.ingestion import IngestionService
+from backend.app.services.ingestion import MAX_CONSECUTIVE_PROVIDER_OUTAGES, IngestionService
 from backend.app.services.job_handlers import JobHandlers
 
 END = date(2026, 7, 30)
@@ -270,6 +274,84 @@ def test_missing_listing_date_does_not_invent_pre_listing_gaps(session, service)
     assert first["listing_date_unknown_codes"] == [instrument.code]
     assert stored_dates(session, instrument) == set(trading_days(observed_start, END))
     assert service.provider.requests[0]["start_date"] == date(2026, 7, 28)
+
+
+def stored_closes(session, instrument):
+    return {
+        row.bar_time.date(): row.close
+        for row in session.execute(select(Bar.bar_time, Bar.close).where(
+            Bar.instrument_id == instrument.id, Bar.adjustment == "QFQ",
+        ))
+    }
+
+
+def test_ex_rights_base_change_replaces_the_whole_saved_series(session, service, monkeypatch):
+    instrument = seed(session, through=date(2026, 7, 28))
+    assert set(stored_closes(session, instrument).values()) == {11}
+    rebased = 5.5
+
+    def fetch_on_new_base(**kwargs):
+        service.provider.requests.append(kwargs)
+        return [
+            MarketBar(datetime.combine(day, datetime.min.time()), 5, 6, 4.5, rebased, 100, 550)
+            for day in trading_days(kwargs["start_date"], kwargs["end_date"])
+        ]
+
+    monkeypatch.setattr(service.provider, "fetch_bars", fetch_on_new_base)
+    result = service.refresh_bars()
+
+    assert result["rebased_codes"] == [instrument.code]
+    assert result["history_complete"] is True
+    assert service.provider.requests[-1]["start_date"] == instrument.list_date
+    # No bar may be left on the old base, or the series would carry a fake gap.
+    assert set(stored_closes(session, instrument).values()) == {rebased}
+
+
+def test_unchanged_overlap_keeps_the_tail_only_update(session, service):
+    instrument = seed(session, through=date(2026, 7, 28))
+    result = service.refresh_bars()
+    assert result["rebased_codes"] == []
+    assert len(service.provider.requests) == 1
+    assert service.provider.requests[0]["start_date"] > instrument.list_date
+
+
+def test_tiny_rounding_differences_are_not_a_base_change():
+    day = date(2026, 7, 1)
+    assert adjustment_base_changed({day: 10.00}, {day: 10.005}) is False
+    assert adjustment_base_changed({day: 1000.0}, {day: 1000.5}) is False
+    assert adjustment_base_changed({day: 10.00}, {day: 9.80}) is True
+    assert adjustment_base_changed({}, {day: 9.80}) is False
+
+
+def test_provider_outage_stops_the_batch_early_and_keeps_saved_bars(session, service, monkeypatch):
+    healthy = seed(session, through=date(2026, 7, 1))
+    for index in range(MAX_CONSECUTIVE_PROVIDER_OUTAGES + 10):
+        code = f"60{index:04d}"
+        session.add(Instrument(
+            code=code, ts_code=f"{code}.SH", exchange="SH", name=code, status="active", list_date=date(2026, 6, 1),
+        ))
+    session.commit()
+    real_fetch = service.provider.fetch_bars
+    outage_calls = []
+
+    def down_after_first_stock(**kwargs):
+        if kwargs["ts_code"] == healthy.ts_code:
+            return real_fetch(**kwargs)
+        outage_calls.append(kwargs["ts_code"])
+        raise RuntimeError("all daily market-data providers failed (baostock: 网络接收错误。)")
+
+    monkeypatch.setattr(service.provider, "fetch_bars", down_after_first_stock)
+    monkeypatch.setattr(IngestionRepository, "refresh_targets", lambda _self, _codes: [healthy, *session.scalars(
+        select(Instrument).where(Instrument.id != healthy.id).order_by(Instrument.code)
+    ).all()])
+
+    result = service.refresh_bars()
+
+    assert len(outage_calls) == MAX_CONSECUTIVE_PROVIDER_OUTAGES
+    assert result["status"] == "partial"
+    assert result["succeeded"] == 1
+    assert "提前停止" in result["errors"][0]["error"]
+    assert set(trading_days(healthy.list_date, END)) == stored_dates(session, healthy)
 
 
 def test_saved_calendar_fallback_cannot_claim_verified_history(session, service, monkeypatch):

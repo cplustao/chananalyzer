@@ -13,7 +13,12 @@ from sqlalchemy.orm import Session
 from backend.app.core.errors import sanitize_text
 from backend.app.db.models import IngestionRun
 from backend.app.db.models.common import utcnow
-from backend.app.domain.daily_refresh import INITIAL_HISTORY_DAYS, OVERLAP_SESSIONS, plan_daily_refresh
+from backend.app.domain.daily_refresh import (
+    INITIAL_HISTORY_DAYS,
+    OVERLAP_SESSIONS,
+    adjustment_base_changed,
+    plan_daily_refresh,
+)
 from backend.app.providers.market_data import (
     HistoricalMarketDataProvider,
     validate_instruments,
@@ -23,6 +28,8 @@ from backend.app.repositories.ingestion import IngestionRepository
 
 ProgressCallback = Callable[[int, int, str], None]
 CancelCallback = Callable[[], bool]
+PROVIDERS_DOWN_ERROR = "all daily market-data providers failed"
+MAX_CONSECUTIVE_PROVIDER_OUTAGES = 30
 
 
 def _attempts(provider: HistoricalMarketDataProvider, attribute: str) -> list[dict[str, Any]]:
@@ -276,7 +283,9 @@ class IngestionService:
         remaining_gaps = 0
         gap_details: list[dict[str, Any]] = []
         listing_date_unknown_codes: list[str] = []
+        rebased_codes: list[str] = []
         skipped = 0
+        consecutive_outages = 0
         try:
             try:
                 calendar = []
@@ -329,7 +338,10 @@ class IngestionService:
                         ranges = plan.ranges
                         if not ranges:
                             skipped += 1
-                    for range_start, range_end in ranges:
+                    pending_ranges = list(ranges)
+                    rebased = False
+                    while pending_ranges:
+                        range_start, range_end = pending_ranges.pop(0)
                         if cancelled and cancelled():
                             run.status = "cancelled"
                             break
@@ -356,6 +368,17 @@ class IngestionService:
                             selected_key,
                         )
                         selected_source = self.repository.data_source(selected_key, selected_name)
+                        if plan and plan.expected_dates and not rebased and effective_adjustment != "NONE":
+                            rebased = adjustment_base_changed(
+                                self.repository.saved_closes(
+                                    instrument.id, effective_adjustment, selected_source.id, range_start, range_end,
+                                ),
+                                {item.bar_time.date(): item.close for item in bars},
+                            )
+                            if rebased:
+                                # Everything already saved is on the old base; refetch it in one window.
+                                rebased_codes.append(instrument.code)
+                                pending_ranges = [(min(plan.expected_dates), end)]
                         written = self.repository.upsert_bars(
                             instrument_id=instrument.id, timeframe=timeframe,
                             adjustment=effective_adjustment, data_source_id=selected_source.id, bars=bars,
@@ -386,6 +409,7 @@ class IngestionService:
                             "数据源未返回或来源未统一，需核实停牌/缺数，未将其视为已补齐"
                         )
                     run.succeeded += 1
+                    consecutive_outages = 0
                     self.session.commit()
                 except Exception as exc:
                     self.session.rollback()
@@ -396,6 +420,14 @@ class IngestionService:
                     run.failed += 1
                     errors.append({"code": instrument.code, "error": sanitize_text(exc, limit=500)})
                     self.session.commit()
+                    consecutive_outages = consecutive_outages + 1 if PROVIDERS_DOWN_ERROR in str(exc) else 0
+                    if consecutive_outages >= MAX_CONSECUTIVE_PROVIDER_OUTAGES:
+                        # Failing the rest one by one took hours. Saved bars stay, so a rerun resumes.
+                        errors.insert(0, {
+                            "error": f"连续 {consecutive_outages} 只股票的所有数据源都失败，已提前停止，"
+                            f"其余 {len(targets) - index} 只未处理；已写入的数据不会丢失，稍后重新运行会从缺口继续"
+                        })
+                        break
                 if progress:
                     progress(index, len(targets), instrument.code)
             if run.status == "running":
@@ -463,6 +495,7 @@ class IngestionService:
             "remaining_gap_count": remaining_gaps,
             "gap_details": gap_details,
             "listing_date_unknown_codes": listing_date_unknown_codes,
+            "rebased_codes": rebased_codes,
             "total": run.total,
             "succeeded": run.succeeded,
             "failed": run.failed,
