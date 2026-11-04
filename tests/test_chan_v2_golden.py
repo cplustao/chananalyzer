@@ -32,7 +32,8 @@ def test_v2_bars_match_protected_chan_golden_samples():
     golden = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
     begin = datetime.fromisoformat(golden["range"]["begin"])
     end = datetime.fromisoformat(golden["range"]["end"])
-    engine = create_engine(f"sqlite:///{V2_DATABASE.as_posix()}")
+    # Read-only: a normal connection checkpoints the WAL into the real database on close.
+    engine = create_engine(f"sqlite:///file:{V2_DATABASE.as_posix()}?mode=ro&uri=true")
 
     compared = 0
     with Session(engine) as session:
