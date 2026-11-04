@@ -157,7 +157,11 @@ def test_daily_prepare_records_ordered_stages_and_decision_gate(session, monkeyp
     handler = JobHandlers.__new__(JobHandlers)
     handler.session = session
     handler.jobs = JobRepository(session)
-    handler._data_refresh = lambda _job: {"status": "completed", "coverage_rate": 1.0}
+    def refresh_market_data(current_job):
+        assert current_job.payload["auto_backfill"] is True
+        return {"status": "completed", "coverage_rate": 1.0}
+
+    handler._data_refresh = refresh_market_data
     handler._limit_up_refresh = lambda _job: {"status": "completed", "coverage_rate": 1.0}
     handler._market_radar = lambda _job: {"status": "completed", "coverage_rate": 1.0}
 

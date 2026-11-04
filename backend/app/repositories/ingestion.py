@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import date, datetime, time
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -51,6 +52,42 @@ class IngestionRepository:
 
     def saved_instrument_count(self) -> int:
         return len(self.session.scalars(select(Instrument.id)).all())
+
+    def first_daily_bar_date(self, codes: list[str] | None, adjustment: str) -> date | None:
+        exchange = func.upper(func.coalesce(Instrument.exchange, ""))
+        statement = select(func.min(Bar.bar_time)).join(Instrument).where(
+            Instrument.status == "active", Instrument.asset_type == "stock",
+            func.length(Instrument.code) == 6, Instrument.ts_code.is_not(None),
+            Bar.timeframe == "DAY",
+            or_(
+                and_(exchange == "BJ", Bar.adjustment == "NONE"),
+                and_(exchange != "BJ", Bar.adjustment == adjustment),
+            ),
+        )
+        if codes:
+            statement = statement.where(Instrument.code.in_(codes))
+        value = self.session.scalar(statement)
+        return value.date() if value else None
+
+    def daily_series_dates(
+        self, instrument_id: int, adjustment: str, end: date,
+    ) -> tuple[date | None, set[date]]:
+        rows = self.session.execute(
+            select(Bar.bar_time, Bar.quality_status, Bar.data_source_id)
+            .where(
+                Bar.instrument_id == instrument_id, Bar.timeframe == "DAY",
+                Bar.adjustment == adjustment,
+                Bar.bar_time <= datetime.combine(end, time.max),
+            ).order_by(Bar.bar_time)
+        ).all()
+        usable = [row for row in rows if row.quality_status == "ok"]
+        source_id = usable[-1].data_source_id if usable else None
+        # Match research's single-provider series. Zero-volume suspension rows
+        # are observations too; an absent row is never assumed to be suspended.
+        return (
+            rows[0].bar_time.date() if rows else None,
+            {row.bar_time.date() for row in usable if row.data_source_id == source_id},
+        )
 
     def upsert_instruments(self, items: Iterable[InstrumentRecord], *, source: str) -> int:
         count = 0
@@ -176,15 +213,13 @@ class IngestionRepository:
                 "updated_at",
             )
         }
-        if dialect == "sqlite":
-            statement = sqlite_insert(Bar).values(rows)
-            statement = statement.on_conflict_do_update(index_elements=conflict_columns, set_=update_columns)
-        elif dialect == "postgresql":
-            statement = postgresql_insert(Bar).values(rows)
-            statement = statement.on_conflict_do_update(index_elements=conflict_columns, set_=update_columns)
-        else:
+        if dialect not in {"sqlite", "postgresql"}:
             return self._portable_upsert(rows)
-        self.session.execute(statement)
+        insert = sqlite_insert if dialect == "sqlite" else postgresql_insert
+        for offset in range(0, len(rows), 500):
+            statement = insert(Bar).values(rows[offset:offset + 500])
+            statement = statement.on_conflict_do_update(index_elements=conflict_columns, set_=update_columns)
+            self.session.execute(statement)
         return len(rows)
 
     def mark_series_stale(self, *, instrument_id: int, timeframe: str, adjustment: str) -> int:

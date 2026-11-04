@@ -152,6 +152,7 @@ def refresh_instrument(
     payload = {
         "codes": [instrument.code],
         "lookback_days": lookback_days,
+        "auto_backfill": False,
         "timeframe": "DAY",
         "adjustment": adjustment,
         "refresh_master_data": False,

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from backend.app.core.errors import sanitize_text
 from backend.app.db.models import IngestionRun
 from backend.app.db.models.common import utcnow
+from backend.app.domain.daily_refresh import INITIAL_HISTORY_DAYS, OVERLAP_SESSIONS, plan_daily_refresh
 from backend.app.providers.market_data import (
     HistoricalMarketDataProvider,
     validate_instruments,
@@ -213,6 +214,7 @@ class IngestionService:
         start_date: date | None = None,
         end_date: date | None = None,
         lookback_days: int = 10,
+        auto_backfill: bool = True,
         progress: ProgressCallback | None = None,
         cancelled: CancelCallback | None = None,
     ) -> dict[str, Any]:
@@ -222,7 +224,11 @@ class IngestionService:
             if end_date is not None
             else datetime.now(ZoneInfo("Asia/Shanghai")).date()
         )
+        automatic = auto_backfill and timeframe == "DAY" and start_date is None and end_date is None
         start = start_date or end - timedelta(days=max(1, lookback_days))
+        if automatic:
+            first_stored = self.repository.first_daily_bar_date(codes, adjustment)
+            start = min(end - timedelta(days=INITIAL_HISTORY_DAYS), first_stored or end)
         if start > end:
             raise ValueError("行情刷新开始日期不能晚于结束日期")
 
@@ -252,7 +258,8 @@ class IngestionService:
             freshness="missing",
             missing_fields=[],
             input_digest=_digest(
-                {"codes": codes, "timeframe": timeframe, "adjustment": adjustment, "start": start, "end": end}
+                {"codes": codes, "timeframe": timeframe, "adjustment": adjustment,
+                 "start": start, "end": end, "auto_backfill": automatic}
             ),
         )
         self.session.add(run)
@@ -265,22 +272,37 @@ class IngestionService:
         provider_chain: list[dict[str, Any]] = []
         data_times: list[datetime] = []
         calendar_source = self.provider.key
+        requested_ranges = 0
+        remaining_gaps = 0
+        gap_details: list[dict[str, Any]] = []
+        listing_date_unknown_codes: list[str] = []
+        skipped = 0
         try:
             try:
-                calendar = self.provider.fetch_calendar(start_date=start, end_date=calendar_end)
-                provider_chain.extend(_attempts(self.provider, "last_calendar_attempts"))
+                calendar = []
+                cursor = start
+                while cursor <= calendar_end:
+                    chunk_end = min(calendar_end, cursor + timedelta(days=364)) if automatic else calendar_end
+                    calendar.extend(self.provider.fetch_calendar(start_date=cursor, end_date=chunk_end))
+                    provider_chain.extend(_attempts(self.provider, "last_calendar_attempts"))
+                    cursor = chunk_end + timedelta(days=1)
                 calendar_source = (
                     getattr(self.provider, "last_calendar_provider_key", None) or self.provider.key
                 )
-            except Exception:
+            except Exception as exc:
                 provider_chain.extend(_attempts(self.provider, "last_calendar_attempts"))
                 calendar = self.repository.saved_calendar(start_date=start, end_date=calendar_end)
                 if not calendar:
                     raise
                 calendar_source = "saved-calendar"
                 run.freshness = "stale"
+                if automatic:
+                    errors.append({"error": "交易日历刷新失败，历史完整性待确认：" + sanitize_text(exc, limit=300)})
             calendar_rows = self.repository.upsert_calendar(calendar, source=calendar_source)
             self.session.commit()
+            open_dates = sorted({item.trade_date for item in calendar if item.is_open and item.trade_date <= end})
+            if automatic and not open_dates:
+                raise ValueError("交易日历缺少可验证的开市日期，无法规划自动补全")
             for index, instrument in enumerate(targets, start=1):
                 if cancelled and cancelled():
                     run.status = "cancelled"
@@ -289,48 +311,82 @@ class IngestionService:
                     if not instrument.ts_code:
                         raise ValueError("股票缺少 ts_code")
                     effective_adjustment = adjustment
-                    if instrument.exchange.upper() == "BJ" and adjustment.upper() != "NONE":
+                    if str(instrument.exchange or "").upper() == "BJ" and adjustment.upper() != "NONE":
                         effective_adjustment = "NONE"
                         adjustment_fallbacks.append(instrument.code)
-                    bars = self.provider.fetch_bars(
-                        ts_code=instrument.ts_code,
-                        timeframe=timeframe,
-                        adjustment=effective_adjustment,
-                        start_date=start,
-                        end_date=end,
-                    )
-                    bars = validate_market_bars(bars, start_date=start, end_date=end)
-                    attempts = _attempts(self.provider, "last_bar_attempts")
-                    provider_chain.extend({**item, "subject": instrument.code} for item in attempts)
-                    selected_key = getattr(self.provider, "last_bar_provider_key", None) or self.provider.key
-                    if not attempts:
-                        provider_chain.append(
-                            {
-                                "provider": selected_key,
-                                "status": "accepted",
-                                "row_count": len(bars),
-                                "subject": instrument.code,
-                            }
+                    plan = None
+                    ranges: tuple[tuple[date, date], ...] = ((start, end),)
+                    if automatic:
+                        if instrument.list_date is None:
+                            listing_date_unknown_codes.append(instrument.code)
+                        first_stored, saved_dates = self.repository.daily_series_dates(
+                            instrument.id, effective_adjustment, end,
                         )
-                    selected_name = next(
-                        (
-                            getattr(item, "name", selected_key)
-                            for item in getattr(self.provider, "bar_providers", [])
-                            if item.key == selected_key
-                        ),
-                        selected_key,
-                    )
-                    selected_source = self.repository.data_source(selected_key, selected_name)
-                    rows_written += self.repository.upsert_bars(
-                        instrument_id=instrument.id,
-                        timeframe=timeframe,
-                        adjustment=effective_adjustment,
-                        data_source_id=selected_source.id,
-                        bars=bars,
-                    )
+                        plan = plan_daily_refresh(
+                            open_dates=open_dates, end=end, first_stored=first_stored,
+                            saved_dates=saved_dates, list_date=instrument.list_date,
+                        )
+                        ranges = plan.ranges
+                        if not ranges:
+                            skipped += 1
+                    for range_start, range_end in ranges:
+                        if cancelled and cancelled():
+                            run.status = "cancelled"
+                            break
+                        requested_ranges += 1
+                        bars = self.provider.fetch_bars(
+                            ts_code=instrument.ts_code,
+                            timeframe=timeframe,
+                            adjustment=effective_adjustment,
+                            start_date=range_start,
+                            end_date=range_end,
+                        )
+                        bars = validate_market_bars(bars, start_date=range_start, end_date=range_end)
+                        attempts = _attempts(self.provider, "last_bar_attempts")
+                        provider_chain.extend({**item, "subject": instrument.code} for item in attempts)
+                        selected_key = getattr(self.provider, "last_bar_provider_key", None) or self.provider.key
+                        if not attempts:
+                            provider_chain.append(
+                                {"provider": selected_key, "status": "accepted",
+                                 "row_count": len(bars), "subject": instrument.code}
+                            )
+                        selected_name = next(
+                            (getattr(item, "name", selected_key)
+                             for item in getattr(self.provider, "bar_providers", []) if item.key == selected_key),
+                            selected_key,
+                        )
+                        selected_source = self.repository.data_source(selected_key, selected_name)
+                        written = self.repository.upsert_bars(
+                            instrument_id=instrument.id, timeframe=timeframe,
+                            adjustment=effective_adjustment, data_source_id=selected_source.id, bars=bars,
+                        )
+                        # Preserve repaired windows even if a later window fails or is cancelled.
+                        self.session.commit()
+                        rows_written += written
+                        data_times.append(max(item.bar_time for item in bars))
+                    if run.status == "cancelled":
+                        break
+                    missing = set()
+                    if plan:
+                        observed_start, saved_dates = self.repository.daily_series_dates(instrument.id, effective_adjustment, end)
+                        expected_dates = set(plan.expected_dates)
+                        if instrument.list_date is None and observed_start is not None:
+                            expected_dates = {day for day in expected_dates if day >= observed_start}
+                        missing = expected_dates - saved_dates
+                    if missing:
+                        remaining_gaps += len(missing)
+                        if len(gap_details) < 50:
+                            gap_details.append({
+                                "code": instrument.code, "count": len(missing),
+                                "first_date": min(missing).isoformat(), "last_date": max(missing).isoformat(),
+                                "sample_dates": [day.isoformat() for day in sorted(missing)[:5]],
+                            })
+                        raise ValueError(
+                            f"补采后仍有 {len(missing)} 个交易日缺少可用行情（最早 {min(missing)}）；"
+                            "数据源未返回或来源未统一，需核实停牌/缺数，未将其视为已补齐"
+                        )
                     run.succeeded += 1
                     self.session.commit()
-                    data_times.append(max(item.bar_time for item in bars))
                 except Exception as exc:
                     self.session.rollback()
                     restored_run = self.session.get(IngestionRun, run.id)
@@ -343,7 +399,7 @@ class IngestionService:
                 if progress:
                     progress(index, len(targets), instrument.code)
             if run.status == "running":
-                run.status = "partial" if run.failed else "completed"
+                run.status = "partial" if run.failed or (automatic and calendar_source == "saved-calendar") else "completed"
         except Exception as exc:
             self.session.rollback()
             restored_run = self.session.get(IngestionRun, run.id)
@@ -375,6 +431,10 @@ class IngestionService:
             if run.status == "completed"
             else ["daily_bars"]
         )
+        if remaining_gaps:
+            run.missing_fields = [*run.missing_fields, "unverified_history_gaps"]
+        if automatic and calendar_source == "saved-calendar":
+            run.missing_fields = [*run.missing_fields, "fresh_trading_calendar"]
         run.finished_at = utcnow()
         self.session.commit()
         end_batch = getattr(self.provider, "end_batch", None)
@@ -392,6 +452,17 @@ class IngestionService:
             ),
             "range_start": start.isoformat(),
             "range_end": end.isoformat(),
+            "refresh_mode": "auto" if automatic else "range",
+            "initial_history_days": INITIAL_HISTORY_DAYS if automatic else None,
+            "overlap_sessions": OVERLAP_SESSIONS if automatic else None,
+            "requested_ranges": requested_ranges,
+            "skipped_not_listed": skipped,
+            "history_complete": (
+                run.status == "completed" and calendar_source != "saved-calendar"
+            ) if automatic else None,
+            "remaining_gap_count": remaining_gaps,
+            "gap_details": gap_details,
+            "listing_date_unknown_codes": listing_date_unknown_codes,
             "total": run.total,
             "succeeded": run.succeeded,
             "failed": run.failed,

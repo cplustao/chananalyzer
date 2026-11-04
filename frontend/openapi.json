@@ -2907,6 +2907,12 @@
             "title": "Lookback Days",
             "default": 10
           },
+          "auto_backfill": {
+            "type": "boolean",
+            "title": "Auto Backfill",
+            "description": "无指定日期时按已有日线续更、补缺并初始化两年历史",
+            "default": true
+          },
           "timeframe": {
             "type": "string",
             "enum": [

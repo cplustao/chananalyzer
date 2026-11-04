@@ -165,15 +165,17 @@ class JobHandlers:
                     duration_ms=round((time.monotonic() - started) * 1000), error=str(exc),
                 )
                 raise
+            incomplete = isinstance(value, dict) and value.get("status") in {"partial", "failed", "cancelled"}
             self.jobs.append_stage_event(
-                job, "stage_completed", key,
+                job, "stage_failed" if incomplete else "stage_completed", key,
                 duration_ms=round((time.monotonic() - started) * 1000),
                 coverage_rate=float(value.get("coverage_rate", 1.0)) if isinstance(value, dict) else 1.0,
+                message="仍有缺失或未确认的数据，请查看任务明细后补跑" if incomplete else f"完成{key}",
             )
             return value
 
         refresh_payload = {
-            "lookback_days": int(payload.get("lookback_days") or 10),
+            "auto_backfill": True,
             "adjustment": "QFQ",
             "timeframe": "DAY",
             "refresh_master_data": True,
@@ -999,6 +1001,7 @@ class JobHandlers:
             start_date=start_date,
             end_date=end_date,
             lookback_days=lookback_days,
+            auto_backfill=bool(payload.get("auto_backfill", True)),
             progress=progress,
             cancelled=cancelled,
         )
