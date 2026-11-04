@@ -54,6 +54,9 @@ export type ChanAnalysis = {
   zs_list?: ChanCenter[]
   buy_signals?: ChanSignal[]
   sell_signals?: ChanSignal[]
+  analysis_bar_count?: number
+  min_analysis_bars?: number
+  history_sufficient?: boolean
   [key: string]: unknown
 }
 
@@ -62,6 +65,9 @@ export type ChanStructureResponse = {
   analysis?: ChanAnalysis | null
   algorithm_version?: string | null
   calculated_at?: string | null
+  is_stale?: boolean
+  available_bar_count?: number
+  min_analysis_bars?: number
 }
 export type ExecutablePosition = {
   position_algorithm_version?: string

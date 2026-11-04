@@ -71,6 +71,8 @@ class DecisionService:
         }
         critical_keys = ("daily_bars", "master_data", "trading_calendar")
         blocking = [key for key in critical_keys if (categories.get(key) or {}).get("status") != "fresh"]
+        if (categories.get("analysis_series") or {}).get("status", "fresh") != "fresh":
+            blocking.append("analysis_series")
         if radar is None:
             return {
                 "mode": "unavailable",

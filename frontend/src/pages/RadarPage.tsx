@@ -35,6 +35,7 @@ const healthLabels: Record<HealthStatus, string> = {
 
 const moduleLabels: Record<string, string> = {
   daily_bars: "日线行情",
+  analysis_series: "分析可用序列",
   master_data: "股票主数据",
   trading_calendar: "交易日历",
   market_radar: "市场雷达",

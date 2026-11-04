@@ -557,10 +557,16 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "integer",
-              "maximum": 3650,
-              "minimum": 1,
-              "default": 30,
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 3650,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Lookback Days"
             }
           }

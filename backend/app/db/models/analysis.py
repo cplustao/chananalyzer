@@ -71,6 +71,9 @@ class AnalysisRun(Base):
     algorithm_version: Mapped[str] = mapped_column(String(32), default="1.0")
     config_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     input_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    # Complete Chan structure for the chart. input_snapshot records what a model actually
+    # received, which for AI runs is a compact excerpt without the full stroke list.
+    structure_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     error: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)

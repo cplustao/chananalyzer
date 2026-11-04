@@ -139,9 +139,11 @@ export function StocksPage() {
   }, [firstWatchId, selectedId, setParams])
 
   useEffect(() => {
-    if (!selectedId || !structure.isSuccess || structure.data.analysis || requested.current.has(selectedId)) return
+    if (!selectedId || !structure.isSuccess || requested.current.has(selectedId)) return
+    const stale = Boolean(structure.data.is_stale)
+    if (structure.data.analysis && !stale) return
     requested.current.add(selectedId)
-    analyze.mutate({ force: false, includeAi: false })
+    analyze.mutate({ force: stale, includeAi: false })
   }, [analyze, selectedId, structure.data, structure.isSuccess])
 
   useEffect(() => {
@@ -153,12 +155,14 @@ export function StocksPage() {
   }, [analysisJob.data?.result, analysisJob.data?.status, analysisMode, client, selectedId])
 
   useEffect(() => {
-    if (refreshJob.data?.status !== "completed" || !refreshJobId) return
+    const status = refreshJob.data?.status
+    if ((status !== "completed" && status !== "partial") || !refreshJobId) return
     if (handledRefreshJobs.current.has(refreshJobId)) return
     handledRefreshJobs.current.add(refreshJobId)
     void client.invalidateQueries({ queryKey: ["bars", selectedId] })
     void client.invalidateQueries({ queryKey: ["data-health"] })
-    const includeAi = continueAiAfterRefresh
+    // A partial refresh still repaired what it could, so redraw; AI waits for complete data.
+    const includeAi = continueAiAfterRefresh && status === "completed"
     setContinueAiAfterRefresh(false)
     analyze.mutate({ force: true, includeAi })
   }, [analyze, client, continueAiAfterRefresh, refreshJob.data?.status, refreshJobId, selectedId])
@@ -235,7 +239,7 @@ export function StocksPage() {
                 variant="outline"
                 onClick={() => refreshStock.mutate()}
                 disabled={!isCanonicalStock || refreshActive || analysisActive}
-                title={isCanonicalStock ? "只同步当前股票最近 30 天行情" : "历史指数或非六位个股不支持单股更新"}
+                title={isCanonicalStock ? "续更当前股票并补齐历史缺口；首次补齐可能需要几十秒" : "历史指数或非六位个股不支持单股更新"}
               >
                 <Database />
                 {refreshActive ? "更新本股中" : "更新本股数据"}
@@ -324,7 +328,7 @@ export function StocksPage() {
             ) : null}
             <section className="stock-research-summary">
               <article className="panel"><div className="panel-title">事实数据</div><p>行情截至 {latestBarDate ?? "—"} · {bars.data.adjustment === "QFQ" ? "前复权" : "不复权"}</p><p>最近收盘 {bars.data.items.at(-1)?.close?.toFixed(2) ?? "—"} · 成交量 {bars.data.items.at(-1)?.volume?.toLocaleString() ?? "—"} 股</p></article>
-              <article className="panel"><div className="panel-title">规则推导</div><p>笔 {analysis?.bi_list?.length ?? 0} · 线段 {analysis?.seg_list?.length ?? 0} · 中枢 {analysis?.zs_list?.length ?? 0}</p><p>买点 {(analysis?.buy_signals?.length ?? 0)} · 卖点 {(analysis?.sell_signals?.length ?? 0)} · 背离 {divergences.length}</p></article>
+              <article className="panel"><div className="panel-title">规则推导</div><p>笔 {analysis?.bi_list?.length ?? 0} · 线段 {analysis?.seg_list?.length ?? 0} · 中枢 {analysis?.zs_list?.length ?? 0}</p><p>买点 {(analysis?.buy_signals?.length ?? 0)} · 卖点 {(analysis?.sell_signals?.length ?? 0)} · 背离 {divergences.length}</p>{analysis?.analysis_bar_count != null ? <p className={analysis.history_sufficient === false ? "error-text" : "muted"}>本次分析基于 {analysis.analysis_bar_count} 根 K 线{analysis.history_sufficient === false ? `，不足 ${analysis.min_analysis_bars ?? 120} 根，结构不可靠，请先更新本股数据` : ""}</p> : null}</article>
               <article className="panel"><div className="panel-title"><span>个人研究计划</span>{selectedWatchItem ? <Button asChild variant="ghost" size="sm"><Link to="/watchlist">编辑</Link></Button> : null}</div>{selectedWatchItem ? <><p><strong>逻辑：</strong>{selectedWatchItem.thesis || selectedWatchItem.note || "待补充"}</p><p><strong>确认：</strong>{selectedWatchItem.confirmation_trigger || "待补充"}</p><p><strong>失效：</strong>{selectedWatchItem.invalidation_condition || "待补充"}</p><p><strong>下一步：</strong>{selectedWatchItem.next_action || "待补充"}</p></> : <p className="muted">加入自选后可记录投资逻辑、确认条件、失效条件和复盘动作。</p>}</article>
             </section>
             <section className="panel">
@@ -335,7 +339,7 @@ export function StocksPage() {
                   {analysisJob.data ? <Badge variant="outline" className={`status-${analysisJob.data.status}`}>{analysisMode === "ai" ? "AI " : "缠论 "}{jobStatusLabel(analysisJob.data.status)}</Badge> : null}
                   {refreshJob.data ? <Badge variant="outline" className={`status-${refreshJob.data.status}`}>本股更新 {jobStatusLabel(refreshJob.data.status)}</Badge> : null}
                 </span>
-                <small>{structure.data?.calculated_at ? `结构计算 ${formatDate(structure.data.calculated_at)}` : "首次打开会自动计算缠论结构"}</small>
+                <small>{structure.data?.is_stale ? "结构基于旧数据，正在按最新行情重算" : structure.data?.calculated_at ? `结构计算 ${formatDate(structure.data.calculated_at)}` : "首次打开会自动计算缠论结构"}</small>
               </div>
               <div className="chart-toolbar" aria-label="缠论图层开关">
                 {layerLabels.map(([key, label]) => (

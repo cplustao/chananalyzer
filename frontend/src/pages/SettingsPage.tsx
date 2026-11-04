@@ -118,7 +118,7 @@ function DataReliabilitySettings() {
   })
   const verify = useMutation({ mutationFn: (name: string) => post<BackupResult>(`/system/backups/${name}/verify`, {}) })
   const labels: Record<string, string> = { fresh: "新鲜", partial: "部分可用", stale: "已过期", missing: "缺失" }
-  const categoryLabels: Record<string, string> = { master_data: "股票主数据", daily_bars: "日线行情", trading_calendar: "交易日历", limit_up: "涨停数据", ipo: "新股数据", radar: "市场雷达", ai: "AI 配置" }
+  const categoryLabels: Record<string, string> = { master_data: "股票主数据", daily_bars: "日线行情", analysis_series: "分析可用序列", trading_calendar: "交易日历", limit_up: "涨停数据", ipo: "新股数据", radar: "市场雷达", ai: "AI 配置" }
   const healthLabel = health.isLoading ? "检查中" : health.isError ? "检查失败" : labels[health.data?.status ?? "missing"]
   const healthTone = health.data?.status ?? (health.isError ? "error" : "checking")
   return (

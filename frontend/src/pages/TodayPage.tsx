@@ -12,6 +12,7 @@ import "./TodayPage.css"
 const moduleLabels: Record<string, string> = {
   master_data: "股票主数据",
   daily_bars: "日线行情",
+  analysis_series: "分析可用序列",
   trading_calendar: "交易日历",
   limit_up: "涨停数据",
   radar: "市场雷达",

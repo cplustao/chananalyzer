@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from backend.app.chan_core.engine import ChanBar, PureChanEngine
 from backend.app.chan_core.protocols import ProgressCallback, ScanBatchOutcome, ScanSubjectOutcome
 from backend.app.db.models import Instrument
-from backend.app.services.bar_access import load_daily_bars
+from backend.app.services.bar_access import MIN_ANALYSIS_BARS, analysis_window_start, load_daily_bars
 
 
 class DatabaseChanEngine:
@@ -29,6 +29,9 @@ class DatabaseChanEngine:
         analysis = self.core.analyze_bars(code, bars)
         analysis["name"] = instrument.name or code
         analysis["adjustment"] = analysis_adjustment
+        analysis["analysis_bar_count"] = len(bars)
+        analysis["min_analysis_bars"] = MIN_ANALYSIS_BARS
+        analysis["history_sufficient"] = len(bars) >= MIN_ANALYSIS_BARS
         return analysis
 
     def scan(
@@ -59,6 +62,12 @@ class DatabaseChanEngine:
             else:
                 try:
                     bars, adjustment = self._bars_with_adjustment(instrument.id)
+                    if len(bars) < MIN_ANALYSIS_BARS:
+                        # Not the same as "no signal": this stock was never really evaluated.
+                        outcomes.append(ScanSubjectOutcome(code=code, status="insufficient_history"))
+                        if progress_callback:
+                            progress_callback(index, total, len(results))
+                        continue
                     analysis = self.core.analyze_bars(code, bars)
                     signals = []
                     for signal in analysis["buy_signals"] + analysis["sell_signals"]:
@@ -113,9 +122,8 @@ class DatabaseChanEngine:
         return self._bars_with_adjustment(instrument_id)[0]
 
     def _bars_with_adjustment(self, instrument_id: int) -> tuple[list[ChanBar], str]:
-        start = datetime.combine(date.today() - timedelta(days=1825), datetime.min.time())
         rows, adjustment = load_daily_bars(
-            self.session, instrument_id, start=start, quality_only=True
+            self.session, instrument_id, start=analysis_window_start(), quality_only=True
         )
         bars = [
             ChanBar(

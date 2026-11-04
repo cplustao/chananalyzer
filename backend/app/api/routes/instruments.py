@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -17,6 +19,7 @@ from backend.app.db.models import AnalysisRun, User
 from backend.app.db.session import get_session
 from backend.app.repositories.instruments import InstrumentRepository
 from backend.app.repositories.jobs import JobRepository
+from backend.app.services.bar_access import MIN_ANALYSIS_BARS, analysis_series_summary
 from backend.app.services.views import instrument_view
 
 router = APIRouter(prefix="/instruments", tags=["instruments"])
@@ -107,12 +110,38 @@ def get_chan_structure(
         )
         .order_by(AnalysisRun.created_at.desc())
     )
+    analysis = _chart_structure(run)
+    bar_count, latest_bar = analysis_series_summary(session, instrument_id)
     return {
         "instrument": instrument_view(instrument).model_dump(),
-        "analysis": run.input_snapshot if run else None,
+        "analysis": analysis,
         "algorithm_version": run.algorithm_version if run else None,
         "calculated_at": run.finished_at.isoformat() if run and run.finished_at else None,
+        "is_stale": _structure_is_stale(analysis, bar_count, latest_bar),
+        "available_bar_count": bar_count,
+        "min_analysis_bars": MIN_ANALYSIS_BARS,
     }
+
+
+def _chart_structure(run: AnalysisRun | None) -> dict | None:
+    if run is None:
+        return None
+    if run.structure_snapshot:
+        return run.structure_snapshot
+    # Older chan-only runs kept the full structure here; compact AI inputs cannot draw a chart.
+    snapshot = run.input_snapshot or {}
+    return snapshot if "bi_list" in snapshot else None
+
+
+def _structure_is_stale(analysis: dict | None, bar_count: int, latest_bar: date | None) -> bool:
+    """True when the saved structure was computed from less data than is now available."""
+    if analysis is None or latest_bar is None:
+        return False
+    computed_through = str(analysis.get("end_date") or "").replace("/", "-")[:10]
+    if computed_through < latest_bar.isoformat():
+        return True
+    computed_bars = analysis.get("analysis_bar_count")
+    return computed_bars is None or int(computed_bars) < bar_count
 
 
 @router.post("/{instrument_id}/analyses", response_model=JobAccepted, status_code=202)
@@ -139,7 +168,7 @@ def analyze_instrument(
 def refresh_instrument(
     instrument_id: int,
     force: bool = False,
-    lookback_days: int = Query(30, ge=1, le=3650),
+    lookback_days: int | None = Query(None, ge=1, le=3650),
     session: Session = Depends(get_session),
     user: User = Depends(current_user),
 ) -> JobAccepted:
@@ -149,10 +178,15 @@ def refresh_instrument(
     if len(instrument.code) != 6 or not instrument.code.isdigit():
         raise HTTPException(status_code=422, detail="当前记录不是规范 A 股个股，无法执行单股行情更新")
     adjustment = "NONE" if str(instrument.exchange or "").upper() == "BJ" else "QFQ"
+    # A fixed recent window from a new provider would become the whole research series,
+    # because analysis reads one provider only. Default to the gap-aware catch-up.
+    window = {"auto_backfill": True} if lookback_days is None else {
+        "auto_backfill": False,
+        "lookback_days": lookback_days,
+    }
     payload = {
         "codes": [instrument.code],
-        "lookback_days": lookback_days,
-        "auto_backfill": False,
+        **window,
         "timeframe": "DAY",
         "adjustment": adjustment,
         "refresh_master_data": False,

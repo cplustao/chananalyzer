@@ -69,6 +69,7 @@ const healthLabels = { fresh: "新鲜", partial: "部分可用", stale: "已过�
 const healthCategoryLabels: Record<string, string> = {
   master_data: "股票主数据",
   daily_bars: "日线行情",
+  analysis_series: "分析可用序列",
   trading_calendar: "交易日历",
   limit_up: "涨停数据",
   ipo: "新股数据",

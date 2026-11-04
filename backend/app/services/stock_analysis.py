@@ -57,6 +57,8 @@ def compact_stock_snapshot(
         "start_date": analysis.get("start_date"),
         "end_date": analysis.get("end_date"),
         "kline_count": analysis.get("kline_count"),
+        "analysis_bar_count": analysis.get("analysis_bar_count"),
+        "history_sufficient": analysis.get("history_sufficient"),
         "current_price": analysis.get("current_price"),
         "macd": analysis.get("macd"),
         "kline_range": analysis.get("kline_range"),

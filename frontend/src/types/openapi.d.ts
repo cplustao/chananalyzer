@@ -1974,7 +1974,7 @@ export interface operations {
         parameters: {
             query?: {
                 force?: boolean;
-                lookback_days?: number;
+                lookback_days?: number | null;
             };
             header?: never;
             path: {
