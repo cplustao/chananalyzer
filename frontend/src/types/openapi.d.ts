@@ -1039,6 +1039,12 @@ export interface components {
              */
             lookback_days: number;
             /**
+             * Auto Backfill
+             * @description 无指定日期时按已有日线续更、补缺并初始化两年历史
+             * @default true
+             */
+            auto_backfill: boolean;
+            /**
              * Timeframe
              * @default DAY
              * @enum {string}

@@ -51,6 +51,7 @@ def test_stock_routes_separate_ai_and_targeted_refresh(client, session):
     assert refresh_job.payload == {
         "codes": ["600519"],
         "lookback_days": 30,
+        "auto_backfill": False,
         "timeframe": "DAY",
         "adjustment": "QFQ",
         "refresh_master_data": False,

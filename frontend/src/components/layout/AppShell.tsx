@@ -503,7 +503,7 @@ export function AppShell() {
                   {dailyPrepare.isPreparing ? dailyPrepare.buttonLabel : "立即更新今日数据"}
                 </Button>
                 <p className="health-preparation-status" role="status" aria-live="polite">
-                  {dailyPrepare.activeJob?.message ?? (dailyPrepare.isPreparing ? "正在确认后台任务…" : "更新将在后台运行，离开当前页面不会中断。")}
+                  {dailyPrepare.activeJob?.message ?? (dailyPrepare.isPreparing ? "正在确认后台任务…" : "自动续更并补查历史缺口；首次补齐可能较慢，离开页面不会中断。")}
                 </p>
               </>
             ) : null}

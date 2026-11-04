@@ -141,6 +141,7 @@ class DataRefreshPayload(StrictPayload):
     start_date: date | None = None
     end_date: date | None = None
     lookback_days: int = Field(default=10, ge=1, le=3650)
+    auto_backfill: bool = Field(default=True, description="无指定日期时按已有日线续更、补缺并初始化两年历史")
     timeframe: Literal["DAY", "WEEK", "MON", "1M", "5M", "15M", "30M"] = "DAY"
     adjustment: Literal["QFQ", "HFQ", "NONE"] = "QFQ"
     refresh_master_data: bool | None = None
