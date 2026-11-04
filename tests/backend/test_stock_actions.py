@@ -50,8 +50,7 @@ def test_stock_routes_separate_ai_and_targeted_refresh(client, session):
     assert refresh_job.kind == "data.refresh"
     assert refresh_job.payload == {
         "codes": ["600519"],
-        "lookback_days": 30,
-        "auto_backfill": False,
+        "auto_backfill": True,
         "timeframe": "DAY",
         "adjustment": "QFQ",
         "refresh_master_data": False,
@@ -155,7 +154,7 @@ class EchoStructuredProvider:
         )
 
 
-def test_stock_ai_handler_persists_analyst_and_independent_review(session):
+def test_stock_ai_handler_persists_analyst_and_independent_review(session, client):
     stock = Instrument(
         code="600519",
         ts_code="600519.SH",
@@ -216,3 +215,8 @@ def test_stock_ai_handler_persists_analyst_and_independent_review(session):
     assert run.input_snapshot["money_flow"]["items"][0]["net_amount"] == 1200.0
     decision = next(report for report in reports if report.role == "decision")
     assert "趋势向上" in decision.content
+
+    # The compact model input must not replace the structure the chart draws.
+    assert "bi_list" not in run.input_snapshot
+    structure = client.get(f"/api/v1/instruments/{stock.id}/chan-structure").json()
+    assert len(structure["analysis"]["bi_list"]) == 1

@@ -21,9 +21,12 @@ from backend.app.db.models import (
     TradingCalendar,
 )
 from backend.app.db.models.common import utcnow
+from backend.app.services.bar_access import MIN_ANALYSIS_BARS, analysis_series_coverage
 from backend.app.services.secrets import SecretService
 
 _STATE_RANK = {"fresh": 0, "partial": 1, "stale": 2, "missing": 3}
+ANALYSIS_SERIES_KEY = "analysis_series"
+ANALYSIS_SERIES_MIN_COVERAGE = 0.95
 
 
 def expected_trade_date(session: Session, now: datetime | None = None) -> date | None:
@@ -54,6 +57,7 @@ class DataHealthService:
         categories = [
             self._master_data(),
             self._daily_bars(expected_trade_date),
+            self._analysis_series(),
             self._calendar(latest_open, calendar_coverage_end),
             self._limit_up(expected_trade_date),
             self._ipo(expected_trade_date),
@@ -387,6 +391,49 @@ class DataHealthService:
             "lagging_count": lagging_count,
             "missing_count": missing_count,
             "fresh_threshold": self.settings.radar_min_current_coverage,
+        }
+
+    def refresh_analysis_series(self) -> dict[str, Any]:
+        """Recompute series-length coverage. It scans every bar, so it runs after refreshes only."""
+        payload = analysis_series_coverage(self.session)
+        cached = self.session.get(DataHealthSnapshot, ANALYSIS_SERIES_KEY)
+        if cached is None:
+            cached = DataHealthSnapshot(key=ANALYSIS_SERIES_KEY)
+            self.session.add(cached)
+        cached.payload = payload
+        cached.generated_at = utcnow()
+        self.session.commit()
+        return payload
+
+    def _analysis_series(self) -> dict[str, Any]:
+        cached = self.session.get(DataHealthSnapshot, ANALYSIS_SERIES_KEY)
+        coverage = dict(cached.payload or {}) if cached else self.refresh_analysis_series()
+        generated_at = cached.generated_at if cached else utcnow()
+        eligible = int(coverage.get("eligible_count") or 0)
+        usable = int(coverage.get("usable_count") or 0)
+        rate = float(coverage.get("coverage_rate") or 0.0)
+        status = "missing" if not eligible else "fresh" if rate >= ANALYSIS_SERIES_MIN_COVERAGE else "stale"
+        recommendation = None
+        if status != "fresh":
+            recommendation = (
+                f"{eligible - usable}/{eligible} 只股票可用 K 线不足 {MIN_ANALYSIS_BARS} 根，"
+                "缠论结构和扫描结果不可靠。请运行每日数据准备完成历史补齐。"
+            )
+        return {
+            **self._item(
+                ANALYSIS_SERIES_KEY,
+                status,
+                source="saved",
+                data_time=generated_at,
+                coverage_rate=rate,
+                missing_fields=[] if status == "fresh" else ["analysis_series_history"],
+                failure_kind="data.refresh",
+                recommendation=recommendation,
+            ),
+            "eligible_count": eligible,
+            "usable_count": usable,
+            "min_analysis_bars": MIN_ANALYSIS_BARS,
+            "fresh_threshold": ANALYSIS_SERIES_MIN_COVERAGE,
         }
 
     def _calendar(self, latest_open: date | None, coverage_end: date | None) -> dict[str, Any]:

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
 ProgressCallback = Callable[[int, int, int], None]
-ScanOutcomeStatus = Literal["matched", "no_signal", "filtered", "failed"]
+ScanOutcomeStatus = Literal["matched", "no_signal", "insufficient_history", "filtered", "failed"]
 
 
 @dataclass(slots=True)

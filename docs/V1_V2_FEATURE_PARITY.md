@@ -16,7 +16,7 @@
 | ID | v1 能力 | v2 状态 | 差异与验收 |
 |---|---|---|---|
 | STOCK-001 | 个股 K 线与缠论分析 | MIGRATED | `GET /instruments/{id}/bars` 与 `chan-structure`；黄金样本覆盖笔、线段、中枢、买卖点。 |
-| STOCK-002 | 单只股票更新 | MIGRATED | 只刷新当前六位 A 股最近 30 天；`tests/backend/test_stock_actions.py`。 |
+| STOCK-002 | 单只股票更新 | MIGRATED | 对当前六位 A 股执行续更与补缺；固定窗口写入会把研究序列截断到该窗口，因此仅在显式传 `lookback_days` 时使用；`tests/backend/test_stock_actions.py`。 |
 | STOCK-003 | 个股 AI 结论报告 | MIGRATED | 数据过期时先更新本股；最新综合结论直接显示在个股页，完整报告仍可追溯；Fake Provider 和前端渲染测试覆盖。 |
 | STOCK-004 | 两位分析师并行＋决策者 | REPLACED | 产品于 2026-08-04 确认采用融合方案：技术研究员与独立风控仅依据同一原始快照分别生成，综合决策者再读取两份已校验报告；任一前置失败不生成伪决策。 |
 | STOCK-005 | 盘中实时行情进入 AI 输入 | MIGRATED | 交易时段读取腾讯行情，记录来源、行情时间、抓取时间与交易状态；休市和失败均结构化标记并随 AI 输入快照持久化。 |

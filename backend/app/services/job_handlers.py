@@ -375,6 +375,10 @@ class JobHandlers:
             ],
         )
 
+    @staticmethod
+    def _insufficient_history_count(outcome: ScanBatchOutcome) -> int:
+        return sum(1 for subject in outcome.subjects if subject.status == "insufficient_history")
+
     def _finish_scan_items(
         self,
         job: Job,
@@ -481,6 +485,7 @@ class JobHandlers:
             "processed": len(outcome.subjects),
             "matched": len(results),
             "failed": len(errors),
+            "insufficient_history": self._insufficient_history_count(outcome),
             "coverage_rate": (len(outcome.subjects) - len(errors)) / max(1, len(outcome.subjects)),
             "errors": errors,
             "scan_kind": job.kind,
@@ -564,6 +569,7 @@ class JobHandlers:
             "match_count": len(results),
             "matched": len(results),
             "failed": len(errors),
+            "insufficient_history": self._insufficient_history_count(outcome),
             "coverage_rate": (len(outcome.subjects) - len(errors)) / max(1, len(outcome.subjects)),
             "errors": errors,
         }
@@ -886,6 +892,7 @@ class JobHandlers:
             algorithm_version=algorithm_version,
             config_snapshot={"include_ai": include_ai},
             input_snapshot=persisted_snapshot,
+            structure_snapshot=analysis,
             finished_at=datetime.now(),
         )
         self.session.add(run)
@@ -1006,6 +1013,9 @@ class JobHandlers:
             cancelled=cancelled,
         )
         result["master_data"] = master_data
+        if codes is None:
+            self.jobs.heartbeat(job, "正在核对分析可用序列覆盖率", 97)
+            DataHealthService(self.session, get_settings()).refresh_analysis_series()
         if result["status"] == "cancelled":
             self.jobs.mark_cancelled(job)
         elif result["status"] == "partial":
