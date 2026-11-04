@@ -84,6 +84,7 @@ FastAPI -> Services -> Repositories -> SQLAlchemy -> SQLite / PostgreSQL
 
 - 今日研究：数据决策门禁、市场事实与反证、候选变化、自选复盘和研究待办。
 - 每日数据准备：交易日、主数据、日线质量检查、涨停和市场雷达按依赖顺序执行，支持去重、断点恢复与任务进度。
+- 每日行情自动续更与补缺：按每只股票已有记录补齐停用期间的数据，并依据交易日历检查已保存历史内的缺口；重取末尾 3 个交易日。无历史或历史过短时初始化最近 730 个自然日（上市不足两年从上市日开始），已有更长历史也参与缺口检查。已记录的停牌日视为已覆盖；数据源未返回且无法确认原因的缺日标为部分完成并保留待核实明细，不伪造 K 线。首次补齐可能比日常更新耗时。
 - 数据可靠性：统一成交量/成交额单位，记录数据源与复权类型，监控覆盖率、完整刷新时间和阻断原因。
 - 市场雷达：市场结论、证据/反证、风险仓位曲线和历史版本。
 - 个股研究：自选研究队列、标签筛选、K 线、笔/线段/中枢/买卖点/背离、事实与规则结论和分析历史。
@@ -93,17 +94,22 @@ FastAPI -> Services -> Repositories -> SQLAlchemy -> SQLite / PostgreSQL
 - 自选研究计划：记录投资逻辑、确认条件、失效条件、下一步动作、复盘日期和研究状态。
 - 设置与帮助：中文配置、Secret 脱敏、数据源测试和页面级帮助。
 
+自动补全的历史完整性按上市日期及已观察到的数据范围核对；缺少上市日期时，不把首条已观察行情之前的日期直接判断为缺数。显式指定 `start_date` / `end_date` 的行情任务仍严格使用指定范围；`auto_backfill=false` 可保留固定回看窗口，个股页的最近 30 天刷新仍使用此模式。旧每日调度里的 `lookback_days=10` 不再限制自动补全。
+
 ## 本地启动
 
 要求 Python 3.11+、Node.js 20+。
 
+Windows 首次按下方命令创建项目虚拟环境、安装依赖并构建前端；此后可直接双击项目根目录的 `启动 ChanAnalyzer.vbs`，无需打开命令行窗口。启动器会同时启动 API 和 Worker，等待服务就绪后在默认浏览器打开页面；重复双击只会打开已有服务。启动失败会弹出提示，日志位于 `logs/local-launcher.*.log`。修改前端源码后需重新执行 `npm run build`。
+
 ```powershell
-py -3.12 -m pip install -e ".[dev]"
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 cd frontend
 npm install
 npm run build
 cd ..
-py -3.12 -m backend.app.start_local
+.\.venv\Scripts\python.exe -m backend.app.start_local
 ```
 
 访问 `http://127.0.0.1:8011`。本地默认 `AUTH_MODE=local`，只接受本机访问且无需登录。API 与 Worker 是两个独立进程；`start_local` 仅负责同时管理它们。
@@ -171,6 +177,8 @@ npm run test:e2e
 v1 源码、虚拟环境、日志、旧数据库、8001 入口及一次性旧库导入器均已永久删除。主工程只保留 v2，历史结构升级统一由 Alembic 管理。
 
 功能迁移、替代和待补项以 `docs/V1_V2_FEATURE_PARITY.md` 为验收基线；旧运行栈退役不等同于旧功能自动验收通过。
+
+外部 `Stock` 项目的功能去向、未迁移能力和最终删除门禁见 `docs/STOCK_RETIREMENT_PARITY.md`。
 
 ## 风险提示
 
