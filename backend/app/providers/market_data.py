@@ -407,7 +407,6 @@ class BaoStockMarketDataProvider:
     ) -> list[MarketBar]:
         if timeframe.upper() != "DAY":
             raise ValueError("BaoStock only supports DAY in this adapter")
-        bs = self._ensure_login()
         code, exchange = ts_code.split(".", 1)
         if exchange.upper() not in {"SH", "SZ"}:
             raise ValueError(f"BaoStock does not support exchange: {exchange}")
@@ -415,6 +414,20 @@ class BaoStockMarketDataProvider:
         adjust_flag = {"NONE": "3", "QFQ": "2", "HFQ": "1"}.get(adjustment.upper())
         if adjust_flag is None:
             raise ValueError(f"unsupported adjustment: {adjustment}")
+        try:
+            return self._query_bars(symbol, adjust_flag, start_date, end_date)
+        except RuntimeError:
+            # Queries reuse one socket, so a dropped connection fails every later query until the
+            # next login opens a new one. Not logout(): it would talk over the broken socket.
+            self._logged_in = False
+        try:
+            return self._query_bars(symbol, adjust_flag, start_date, end_date)
+        except RuntimeError:
+            self._logged_in = False
+            raise
+
+    def _query_bars(self, symbol: str, adjust_flag: str, start_date: date, end_date: date) -> list[MarketBar]:
+        bs = self._ensure_login()
         result = bs.query_history_k_data_plus(
             symbol,
             "date,open,high,low,close,volume,amount,turn",

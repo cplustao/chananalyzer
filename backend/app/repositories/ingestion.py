@@ -153,6 +153,20 @@ class IngestionRepository:
                 changed += 1
         self.session.flush()
         return changed
+    def saved_closes(
+        self, instrument_id: int, adjustment: str, data_source_id: int, start: date, end: date,
+    ) -> dict[date, float]:
+        rows = self.session.execute(
+            select(Bar.bar_time, Bar.close).where(
+                Bar.instrument_id == instrument_id, Bar.timeframe == "DAY",
+                Bar.adjustment == adjustment, Bar.data_source_id == data_source_id,
+                Bar.quality_status == "ok",
+                Bar.bar_time >= datetime.combine(start, time.min),
+                Bar.bar_time <= datetime.combine(end, time.max),
+            )
+        ).all()
+        return {row.bar_time.date(): float(row.close) for row in rows}
+
     def upsert_bars(
         self,
         *,

@@ -1,9 +1,12 @@
+import sys
 from datetime import date
 from types import SimpleNamespace
 
+import pytest
 from pydantic import SecretStr
 
 from backend.app.providers.market_data import (
+    BaoStockMarketDataProvider,
     TushareMarketDataProvider,
     build_historical_market_provider,
 )
@@ -20,6 +23,76 @@ def test_provider_factory_uses_v2_settings_when_environment_is_not_exported(monk
 
     assert isinstance(provider, TushareMarketDataProvider)
     assert provider.token == "settings-token"
+
+
+class FakeBaoStockResult:
+    def __init__(self, error_code="0", error_msg="", rows=()):
+        self.error_code = error_code
+        self.error_msg = error_msg
+        self._rows = list(rows)
+
+    def next(self):
+        return bool(self._rows)
+
+    def get_row_data(self):
+        return self._rows.pop(0)
+
+
+class FakeBaoStock:
+    """One connection per login; a connection that drops keeps failing, like the real client."""
+
+    OK_ROW = ["2026-07-01", "10", "11", "9", "10.5", "1000", "10500", "1.2"]
+
+    def __init__(self, drops=1):
+        self.logins = 0
+        self.queries = 0
+        self.logouts = 0
+        self.drops = drops
+
+    def login(self):
+        self.logins += 1
+        return SimpleNamespace(error_code="0", error_msg="")
+
+    def logout(self):
+        self.logouts += 1
+
+    def query_history_k_data_plus(self, *_args, **_kwargs):
+        self.queries += 1
+        if self.logins <= self.drops:
+            return FakeBaoStockResult("10002007", "网络接收错误。")
+        return FakeBaoStockResult(rows=[list(self.OK_ROW)])
+
+
+def fetch_baostock_bars(provider):
+    return provider.fetch_bars(
+        ts_code="600519.SH", timeframe="DAY", adjustment="QFQ",
+        start_date=date(2026, 7, 1), end_date=date(2026, 7, 1),
+    )
+
+
+def test_baostock_reconnects_after_a_dropped_connection(monkeypatch):
+    fake = FakeBaoStock(drops=1)
+    monkeypatch.setitem(sys.modules, "baostock", fake)
+    provider = BaoStockMarketDataProvider()
+
+    bars = fetch_baostock_bars(provider)
+
+    assert [bar.close for bar in bars] == [10.5]
+    assert fake.logins == 2
+    # Logging out would send over the broken socket.
+    assert fake.logouts == 0
+
+
+def test_baostock_failure_does_not_poison_later_stocks(monkeypatch):
+    fake = FakeBaoStock(drops=2)
+    monkeypatch.setitem(sys.modules, "baostock", fake)
+    provider = BaoStockMarketDataProvider()
+
+    with pytest.raises(RuntimeError, match="网络接收错误"):
+        fetch_baostock_bars(provider)
+
+    assert [bar.close for bar in fetch_baostock_bars(provider)] == [10.5]
+    assert fake.logins == 3
 
 
 def test_akshare_provider_falls_back_to_eastmoney_http(monkeypatch):
