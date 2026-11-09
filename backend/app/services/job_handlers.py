@@ -232,7 +232,7 @@ class JobHandlers:
             raise ValueError("决策可用性门禁未通过：" + ", ".join(health.get("blocking_reasons") or []))
 
         queued: list[str] = []
-        if bool(payload.get("run_screeners")):
+        if bool(payload.get("run_screeners", True)):
             preset = str(payload.get("screening_preset") or "balanced")
             preset_types = {
                 "conservative": ["2", "3b"],
@@ -355,6 +355,16 @@ class JobHandlers:
             self.jobs.complete(job, result=result, partial=True)
         return result
 
+    def _scan_data_context(self) -> dict[str, Any]:
+        """Record which trade date a scan's bars stood for, so today's list never shows an older scan as today's."""
+        health = DataHealthService(self.session, get_settings()).cached_snapshot()
+        usable = bool(health.get("decision_usable"))
+        return {
+            "data_as_of": health.get("as_of_trade_date") if usable else None,
+            "expected_trade_date": health.get("expected_trade_date"),
+            "decision_usable": usable,
+        }
+
     def _eligible_stock_codes(self, requested: list[str] | None = None) -> list[str]:
         statement = select(Instrument.code).where(
             Instrument.status == "active",
@@ -430,6 +440,7 @@ class JobHandlers:
         is_sell = job.kind == "scan.sell" or (job.kind == "screen.smart" and scan_side == "sell")
         buy_types = job.payload.get("types", ["1", "1p", "2", "3a", "3b"]) if is_buy else []
         sell_types = job.payload.get("types", ["1", "2", "3a", "3b"]) if is_sell else []
+        data_context = self._scan_data_context()
         self.jobs.heartbeat(job, f"准备扫描 {len(codes)} 只股票", 2)
 
         def progress(current: int, total: int, found: int) -> None:
@@ -509,6 +520,7 @@ class JobHandlers:
             "errors": errors,
             "scan_kind": job.kind,
             "algorithm_version": "chan-core-v2-memory-1",
+            **data_context,
         }
         if errors:
             self.jobs.complete(job, result=result, partial=True)
@@ -534,6 +546,7 @@ class JobHandlers:
         instrument_ids = dict(self.session.execute(select(Instrument.code, Instrument.id)).all())
         items_by_code = self.jobs.prepare_items(job, codes, instrument_ids)
         buy_types = job.payload.get("types", ["1", "2", "3a", "3b"])
+        data_context = self._scan_data_context()
 
         def progress(current: int, total: int, found: int) -> None:
             if current == total or current % max(1, total // 100) == 0:
@@ -591,6 +604,7 @@ class JobHandlers:
             "insufficient_history": self._insufficient_history_count(outcome),
             "coverage_rate": (len(outcome.subjects) - len(errors)) / max(1, len(outcome.subjects)),
             "errors": errors,
+            **data_context,
         }
         if errors:
             self.jobs.complete(job, result=result, partial=True)

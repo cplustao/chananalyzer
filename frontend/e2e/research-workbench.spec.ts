@@ -34,6 +34,14 @@ async function mockApi(page: Page) {
           { instrument_id: 1, code: "600519", name: "贵州茅台", signal_type: "2", signal_date: "2026-07-24", state: "continued_hit", current_job_id: "scan-job", previous_job_id: "scan-job-old" },
         ],
       },
+      today_candidates: {
+        is_current: true, reason: null, basis_trade_date: "2026-07-24", expected_trade_date: "2026-07-24",
+        signal_window: { start: "2026-07-22", end: "2026-07-24", sessions: 3 },
+        ordering: "信号日期从新到旧，同一天按现价距信号价由近到远", limit: 20, total: 1,
+        items: [{ instrument_id: 1, code: "600519", name: "贵州茅台", industry: "白酒", signal_type: "2", signal_date: "2026-07-24", signal_price: 1500, latest_price: 1530, distance_pct: 2, scan_kinds: ["screen.smart"], job_id: "scan-job" }],
+        scans: [{ job_id: "scan-job", kind: "screen.smart", status: "completed", coverage_rate: 1, matched: 1, insufficient_history: 0, data_as_of: "2026-07-24", finished_at: "2026-07-24T10:00:00Z" }],
+        pending_scan_job_ids: [],
+      },
       watchlist_hits: [],
       data_health: {
         status: "fresh", decision_usable: true, checked_at: "2026-07-28T09:00:00Z",
@@ -177,6 +185,8 @@ test("defaults to today's research workbench and exposes unified navigation", as
   await expect(page.getByText("今日数据已通过决策门禁")).toBeVisible()
   await expect(page.getByText("最新完整交易日复盘")).toBeVisible()
   await expect(page.getByText("任务与异常")).toBeVisible()
+  await expect(page.getByText("今日候选", { exact: true })).toBeVisible()
+  await expect(page.getByText("信号日 2026-07-24 · 信号价 1500.00 · 现价 1530.00（+2.0%）")).toBeVisible()
 })
 
 test("context help lands in the versioned help center", async ({ page }) => {

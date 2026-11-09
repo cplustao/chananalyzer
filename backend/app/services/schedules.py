@@ -19,7 +19,7 @@ DEFAULT_SCHEDULES = (
         "hour": 17,
         "minute": 0,
         "weekdays": [1, 2, 3, 4, 5],
-        "payload": {"run_screeners": False, "screening_preset": "balanced"},
+        "payload": {"run_screeners": True, "screening_preset": "balanced"},
     },
 )
 
