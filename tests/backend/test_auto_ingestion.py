@@ -370,7 +370,7 @@ def test_saved_calendar_fallback_cannot_claim_verified_history(session, service,
     assert "交易日历刷新失败" in result["errors"][0]["error"]
 
 
-def test_partial_daily_preparation_does_not_checkpoint_market_data_as_completed(session):
+def test_cancelled_daily_preparation_stops_at_market_data(session):
     job = Job(kind="daily.prepare", status="running", payload={})
     session.add(job)
     session.commit()
@@ -378,12 +378,11 @@ def test_partial_daily_preparation_does_not_checkpoint_market_data_as_completed(
     handler.session = session
     handler.jobs = JobRepository(session)
 
-    def incomplete_market_data(current_job):
-        result = {"status": "partial", "coverage_rate": 0.5}
-        handler.jobs.complete(current_job, result, partial=True)
-        return result
+    def cancelled_market_data(current_job, **_kwargs):
+        handler.jobs.mark_cancelled(current_job)
+        return {"status": "cancelled"}
 
-    handler._data_refresh = incomplete_market_data
+    handler._data_refresh = cancelled_market_data
     result = handler._daily_prepare(job)
     assert result["blocking_stage"] == "market_data"
     assert job.checkpoint["market_data"]["status"] == "failed"
