@@ -12,11 +12,17 @@ from backend.app.repositories.jobs import JobRepository
 
 TIMEZONE = ZoneInfo("Asia/Shanghai")
 ALLOWED_SCHEDULE_JOB_KINDS = {"market_radar.refresh", "limit_up.refresh", "ipo.refresh", "data.refresh", "screen.hot", "screen.smart", "daily.prepare"}
+DAILY_PREPARE_SCHEDULE_KEY = "weekday-daily-prepare"
+# BaoStock was seen refusing logins until about 17:30 while it loads the day's data.
+OUTAGE_RETRY_MINUTES = 30
+OUTAGE_RETRY_LIMIT = 3
+OUTAGE_RETRY_CUTOFF_HOUR = 23
+OUTAGE_RETRY_PAYLOAD_KEY = "outage_retry"
 DEFAULT_SCHEDULES = (
     {
-        "key": "weekday-daily-prepare",
+        "key": DAILY_PREPARE_SCHEDULE_KEY,
         "job_kind": "daily.prepare",
-        "hour": 17,
+        "hour": 18,
         "minute": 0,
         "weekdays": [1, 2, 3, 4, 5],
         "payload": {"run_screeners": True, "screening_preset": "balanced"},
@@ -145,6 +151,25 @@ def upsert_schedule(
     return schedule
 
 
+def schedule_outage_retry(session: Session, key: str, retries_so_far: int) -> datetime | None:
+    """Bring the schedule forward to retry soon after a data-source outage stopped its run.
+
+    Returns the retry time (UTC, naive) or None when no retry is set: the schedule is off, the
+    retries for the day are used up, or the retry would fall after the cutoff hour.
+    """
+    schedule = session.scalar(select(AutomationSchedule).where(AutomationSchedule.key == key))
+    if schedule is None or not schedule.enabled or retries_so_far >= OUTAGE_RETRY_LIMIT:
+        return None
+    retry_at = utcnow() + timedelta(minutes=OUTAGE_RETRY_MINUTES)
+    if retry_at.replace(tzinfo=UTC).astimezone(TIMEZONE).hour >= OUTAGE_RETRY_CUTOFF_HOUR:
+        return None
+    if schedule.next_run_at is None or retry_at < schedule.next_run_at:
+        schedule.next_run_at = retry_at
+        schedule.payload = {**(schedule.payload or {}), OUTAGE_RETRY_PAYLOAD_KEY: retries_so_far + 1}
+        session.commit()
+    return schedule.next_run_at
+
+
 def enqueue_due_schedules(session: Session, max_attempts: int) -> int:
     now = utcnow()
     due = session.scalars(
@@ -158,6 +183,10 @@ def enqueue_due_schedules(session: Session, max_attempts: int) -> int:
     for schedule in due:
         hour, minute, weekdays = parse_cron(schedule.cron_expression)
         payload = {**(schedule.payload or {}), "automation_schedule": schedule.key}
+        # The retry count belongs to this one run; the next regular run starts from zero.
+        stored = dict(schedule.payload or {})
+        if stored.pop(OUTAGE_RETRY_PAYLOAD_KEY, None) is not None:
+            schedule.payload = stored
         _job, deduplicated = JobRepository(session).create(
             schedule.job_kind,
             payload,

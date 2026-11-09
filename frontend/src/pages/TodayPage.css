@@ -32,3 +32,8 @@
 .candidate-grid article > div:last-child { justify-content: flex-start; }
 .candidate-grid p { color: var(--muted-foreground); font-size: 12px; }
 @media (max-width: 800px) { .today-grid, .today-evidence { grid-template-columns: 1fr; } .decision-gate { padding: 14px; } }
+.automation-strip { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface-1); font-size: 12px; }
+.automation-strip > svg { flex: none; width: 16px; height: 16px; color: var(--info); }
+.automation-strip.off > svg { color: var(--warning); }
+.automation-strip > span { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; flex: 1; min-width: 0; }
+.automation-strip small { color: var(--muted-foreground); }

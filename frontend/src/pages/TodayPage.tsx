@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useDailyPrepare } from "@/hooks/useDailyPrepare"
 import { api, post } from "@/lib/api"
-import type { DecisionToday, TodayCandidates, Watchlist } from "@/types/api"
+import type { AutomationStatus, DecisionToday, TodayCandidates, Watchlist } from "@/types/api"
 import "./TodayPage.css"
 
 const moduleLabels: Record<string, string> = {
@@ -54,6 +54,40 @@ function candidateEmpty(candidates: TodayCandidates | null | undefined): { title
     title: "最近 3 个交易日没有买点信号",
     detail: `已检查信号日 ${window.start ?? "—"} 至 ${window.end ?? "—"} 的扫描结果。`,
   }
+}
+
+const localTime = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
+})
+
+function formatLocal(value: string | null | undefined) {
+  return value ? localTime.format(new Date(value)) : "—"
+}
+
+const runStatusLabels: Record<string, string> = {
+  completed: "完成",
+  partial: "部分完成",
+  failed: "失败",
+  cancelled: "已取消",
+  queued: "排队中",
+  running: "运行中",
+}
+
+function automationNotes(automation: AutomationStatus) {
+  const notes: string[] = []
+  const success = automation.last_success
+  if (success) {
+    const unfilled = success.warnings.reduce((sum, item) => sum + item.failed, 0)
+    notes.push(`上次成功 ${formatLocal(success.finished_at)}${success.scheduled ? "（自动）" : ""}${unfilled ? `，${unfilled} 只行情未补齐` : ""}`)
+  } else {
+    notes.push("还没有成功完成过每日准备")
+  }
+  const latest = automation.latest_run
+  if (latest && latest.id !== success?.id && !["queued", "running"].includes(latest.status)) {
+    notes.push(`最近一次${runStatusLabels[latest.status] ?? latest.status}（${formatLocal(latest.finished_at ?? latest.created_at)}）：${latest.error ?? latest.message ?? "请查看任务中心"}`)
+  }
+  if (automation.enabled && !automation.run_screeners) notes.push("未设置串联扫描，今日候选不会自动更新")
+  return notes
 }
 
 function formatPercent(value: number | null | undefined) {
@@ -128,6 +162,17 @@ export function TodayPage() {
         </div>
         <Badge variant="outline">{usable ? "可研究" : preparing ? "准备中" : "只读模式"}</Badge>
       </section>
+
+      {data.automation ? (
+        <section className={`automation-strip ${data.automation.enabled ? "on" : "off"}`} aria-label="自动准备状态">
+          <Clock3 />
+          <span>
+            <strong>{data.automation.enabled ? `自动准备：工作日 ${String(data.automation.hour ?? 17).padStart(2, "0")}:${String(data.automation.minute ?? 0).padStart(2, "0")}，下次 ${formatLocal(data.automation.next_run_at)}` : "自动准备未开启"}</strong>
+            {automationNotes(data.automation).map((note) => <small key={note}>{note}</small>)}
+          </span>
+          {!data.automation.enabled ? <Button asChild variant="outline" size="sm"><Link to="/settings">去开启</Link></Button> : null}
+        </section>
+      ) : null}
 
       <section className="stats-grid compact">
         {data.market_facts.slice(0, 4).map((fact) => <StatCard key={fact.key} label={fact.label} value={fact.value} detail={fact.detail ?? undefined} />)}

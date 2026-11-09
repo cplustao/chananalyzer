@@ -2,19 +2,21 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from copy import deepcopy
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
-from backend.app.db.models import Job, RadarSnapshot, Watchlist, WatchlistItem
+from backend.app.db.models import AutomationSchedule, Job, RadarSnapshot, Watchlist, WatchlistItem
 from backend.app.domain.market_positions import (
     build_executable_positions,
     risk_inputs_from_snapshot,
 )
 from backend.app.services.data_health import DataHealthService
 from backend.app.services.scan_changes import SCAN_KINDS, ScanChangeService
+from backend.app.services.schedules import DAILY_PREPARE_SCHEDULE_KEY, TIMEZONE, schedule_view
 from backend.app.services.today_candidates import TodayCandidateService
 
 
@@ -37,6 +39,7 @@ class DecisionService:
         candidates = self._safe("today_candidates", lambda: TodayCandidateService(self.session).build(health))
         watchlist_hits = self._safe("watchlist_hits", lambda: self._watchlist_hits(candidates))
         jobs = self._safe("attention_jobs", self._attention_jobs)
+        automation = self._safe("automation", self._automation)
         industries = []
         if radar:
             industries = ((radar.get("snapshot") or {}).get("limit_ecology") or {}).get("industries", [])
@@ -55,6 +58,7 @@ class DecisionService:
             "watchlist_hits": watchlist_hits,
             "data_health": health,
             "attention_jobs": jobs,
+            "automation": automation,
             "missing_or_stale_modules": sorted(set(self.missing + stale)),
         }
 
@@ -289,6 +293,50 @@ class DecisionService:
             }
             for item, name in rows
         ]
+
+    def _automation(self) -> dict[str, Any]:
+        """Whether daily preparation runs by itself, and how its latest runs went."""
+        schedule = self.session.scalar(
+            select(AutomationSchedule).where(AutomationSchedule.key == DAILY_PREPARE_SCHEDULE_KEY)
+        )
+        view = schedule_view(schedule) if schedule else None
+        runs = self.session.scalars(
+            select(Job).where(Job.kind == "daily.prepare").order_by(Job.created_at.desc()).limit(30)
+        ).all()
+        latest = runs[0] if runs else None
+        last_success = next((job for job in runs if job.status == "completed"), None)
+
+        def local(moment: datetime | None) -> str | None:
+            return moment.replace(tzinfo=UTC).astimezone(TIMEZONE).isoformat() if moment else None
+
+        def run_view(job: Job | None) -> dict[str, Any] | None:
+            if job is None:
+                return None
+            result = job.result or {}
+            return {
+                "id": job.id,
+                "status": job.status,
+                "message": job.message,
+                "error": job.failure_summary,
+                "scheduled": bool((job.payload or {}).get("automation_schedule")),
+                "created_at": local(job.created_at),
+                "finished_at": local(job.finished_at),
+                "failed": job.failed,
+                "warnings": result.get("warnings") or [],
+                "blocking_stage": result.get("blocking_stage"),
+                "queued_screening_jobs": result.get("queued_screening_jobs") or [],
+            }
+
+        return {
+            "schedule_key": DAILY_PREPARE_SCHEDULE_KEY,
+            "enabled": bool(view and view["enabled"]),
+            "hour": view["hour"] if view else None,
+            "minute": view["minute"] if view else None,
+            "next_run_at": view["next_run_at"] if view else None,
+            "run_screeners": bool(((view or {}).get("payload") or {}).get("run_screeners", True)),
+            "latest_run": run_view(latest),
+            "last_success": run_view(last_success),
+        }
 
     def _attention_jobs(self) -> dict[str, Any]:
         failed = self.session.scalars(

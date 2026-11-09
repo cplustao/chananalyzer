@@ -51,6 +51,12 @@ async function mockApi(page: Page) {
         database_backend: "sqlite", backup_mode: "application", categories: [],
       },
       attention_jobs: { failed: [], pending: [] },
+      automation: {
+        schedule_key: "weekday-daily-prepare", enabled: true, hour: 17, minute: 0,
+        next_run_at: "2026-07-27T17:00:00+08:00", run_screeners: true,
+        latest_run: null,
+        last_success: { id: "prepare-job", status: "completed", scheduled: true, created_at: "2026-07-24T17:00:00+08:00", finished_at: "2026-07-24T18:10:00+08:00", failed: 2, warnings: [{ stage: "market_data", failed: 2, codes: ["920023", "920058"], message: "部分股票行情未补齐" }], queued_screening_jobs: [] },
+      },
       missing_or_stale_modules: [],
     }
     else if (path.endsWith("/system/data-health")) body = {
@@ -186,6 +192,8 @@ test("defaults to today's research workbench and exposes unified navigation", as
   await expect(page.getByText("最新完整交易日复盘")).toBeVisible()
   await expect(page.getByText("任务与异常")).toBeVisible()
   await expect(page.getByText("今日候选", { exact: true })).toBeVisible()
+  await expect(page.getByText("自动准备：工作日 17:00，下次 07/27 17:00")).toBeVisible()
+  await expect(page.getByText("上次成功 07/24 18:10（自动），2 只行情未补齐")).toBeVisible()
   await expect(page.getByText("信号日 2026-07-24 · 信号价 1500.00 · 现价 1530.00（+2.0%）")).toBeVisible()
 })
 
