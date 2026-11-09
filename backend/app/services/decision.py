@@ -15,6 +15,7 @@ from backend.app.domain.market_positions import (
 )
 from backend.app.services.data_health import DataHealthService
 from backend.app.services.scan_changes import SCAN_KINDS, ScanChangeService
+from backend.app.services.today_candidates import TodayCandidateService
 
 
 class DecisionService:
@@ -33,7 +34,8 @@ class DecisionService:
             if not review_context["usable_for_next_session"]:
                 radar["executable_position"] = None
         latest_scan = self._safe("scan_changes", self._scan_changes)
-        watchlist_hits = self._safe("watchlist_hits", lambda: self._watchlist_hits(latest_scan))
+        candidates = self._safe("today_candidates", lambda: TodayCandidateService(self.session).build(health))
+        watchlist_hits = self._safe("watchlist_hits", lambda: self._watchlist_hits(candidates))
         jobs = self._safe("attention_jobs", self._attention_jobs)
         industries = []
         if radar:
@@ -49,6 +51,7 @@ class DecisionService:
                 "model": "limit-up aggregation only",
             },
             "scan_changes": latest_scan,
+            "today_candidates": candidates,
             "watchlist_hits": watchlist_hits,
             "data_health": health,
             "attention_jobs": jobs,
@@ -264,14 +267,10 @@ class DecisionService:
             return None
         return ScanChangeService(self.session).compare(job.id)
 
-    def _watchlist_hits(self, changes: dict[str, Any] | None) -> list[dict[str, Any]]:
-        if not changes:
+    def _watchlist_hits(self, candidates: dict[str, Any] | None) -> list[dict[str, Any]]:
+        if not candidates or not candidates.get("is_current"):
             return []
-        instrument_ids = {
-            item.get("instrument_id")
-            for item in changes.get("items", [])
-            if item.get("state") in {"new_hit", "continued_hit"}
-        }
+        instrument_ids = {item.get("instrument_id") for item in candidates.get("items", []) if item.get("instrument_id")}
         if not instrument_ids:
             return []
         rows = self.session.execute(
@@ -280,7 +279,7 @@ class DecisionService:
             .where(Watchlist.user_id == self.user_id, WatchlistItem.instrument_id.in_(instrument_ids))
             .order_by(WatchlistItem.position)
         ).all()
-        changes_by_id = {item.get("instrument_id"): item for item in changes.get("items", [])}
+        changes_by_id = {item.get("instrument_id"): item for item in candidates.get("items", [])}
         return [
             {
                 "watchlist": name,

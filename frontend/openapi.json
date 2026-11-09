@@ -2530,7 +2530,7 @@
           "run_screeners": {
             "type": "boolean",
             "title": "Run Screeners",
-            "default": false
+            "default": true
           },
           "screening_preset": {
             "type": "string",

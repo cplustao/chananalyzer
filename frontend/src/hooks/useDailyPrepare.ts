@@ -33,7 +33,7 @@ export function useDailyPrepare() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         kind: "daily.prepare",
-        payload: { run_screeners: false, screening_preset: "balanced" },
+        payload: { run_screeners: true, screening_preset: "balanced" },
       }),
     }),
     onSuccess: (result) => {

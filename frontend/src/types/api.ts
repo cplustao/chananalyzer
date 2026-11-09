@@ -292,6 +292,46 @@ export type RadarChange = {
   unit: string
 }
 
+export type TodayCandidate = {
+  instrument_id?: number | null
+  code: string
+  name?: string | null
+  industry?: string | null
+  signal_type?: string | null
+  signal_date: string
+  signal_price?: number | null
+  latest_price?: number | null
+  distance_pct?: number | null
+  scan_kinds: string[]
+  job_id: string
+  unconfirmed?: boolean
+}
+
+export type TodayCandidateScan = {
+  job_id: string
+  kind: string
+  status: string
+  coverage_rate?: number | null
+  matched?: number | null
+  insufficient_history?: number | null
+  data_as_of?: string | null
+  finished_at?: string | null
+}
+
+export type TodayCandidates = {
+  is_current: boolean
+  reason?: "stale_scan" | "gate_blocked" | "no_scan" | null
+  basis_trade_date?: string | null
+  expected_trade_date?: string | null
+  signal_window: { start?: string | null; end?: string | null; sessions: number }
+  ordering: string
+  limit: number
+  total: number
+  items: TodayCandidate[]
+  scans: TodayCandidateScan[]
+  pending_scan_job_ids: string[]
+}
+
 export type DecisionToday = {
   review_context: ReviewContext
   market_facts: MarketFact[]
@@ -313,7 +353,8 @@ export type DecisionToday = {
   } | null
   clustered_industries: { items: RadarIndustry[]; source?: string | null; model: string }
   scan_changes?: ScanChanges | null
-  watchlist_hits?: Array<{ watchlist: string; item_id: string; instrument_id: number; change: ScanChangeItem }> | null
+  today_candidates?: TodayCandidates | null
+  watchlist_hits?: Array<{ watchlist: string; item_id: string; instrument_id: number; change: TodayCandidate }> | null
   data_health?: DataHealth | null
   attention_jobs?: { failed: Array<Pick<Job, "id" | "kind" | "status" | "message" | "created_at">>; pending: Array<Pick<Job, "id" | "kind" | "status" | "message" | "created_at">> } | null
   missing_or_stale_modules: string[]

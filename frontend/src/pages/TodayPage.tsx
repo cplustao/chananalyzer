@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useDailyPrepare } from "@/hooks/useDailyPrepare"
 import { api, post } from "@/lib/api"
-import type { DecisionToday, Watchlist } from "@/types/api"
+import type { DecisionToday, TodayCandidates, Watchlist } from "@/types/api"
 import "./TodayPage.css"
 
 const moduleLabels: Record<string, string> = {
@@ -17,6 +17,48 @@ const moduleLabels: Record<string, string> = {
   limit_up: "涨停数据",
   radar: "市场雷达",
   unit_contract: "行情单位契约",
+}
+
+const signalLabels: Record<string, string> = {
+  "1": "一类买点",
+  "1p": "盘整背驰",
+  "2": "二类买点",
+  "2s": "类二类",
+  "3a": "三类 A",
+  "3b": "三类 B",
+}
+
+const scanKindLabels: Record<string, string> = {
+  "screen.smart": "全市场",
+  "screen.hot": "成交额前 200",
+  "scan.buy": "买点扫描",
+}
+
+function candidateHeading(candidates: TodayCandidates | null | undefined) {
+  if (!candidates || candidates.is_current || !candidates.basis_trade_date) return "今日候选"
+  return `候选（基于 ${candidates.basis_trade_date} 的扫描）`
+}
+
+function candidateEmpty(candidates: TodayCandidates | null | undefined): { title: string; detail: string } {
+  if (candidates?.pending_scan_job_ids.length) {
+    return { title: "扫描进行中", detail: "每日准备通过门禁后已自动排队全市场扫描，完成后候选会出现在这里。" }
+  }
+  if (!candidates || candidates.reason === "no_scan") {
+    return { title: "还没有扫描结果", detail: "运行“准备今日数据”，通过门禁后会自动接着扫描全市场买点。" }
+  }
+  if (candidates.reason === "gate_blocked") {
+    return { title: "数据未通过门禁", detail: "门禁通过前不生成今日候选，请先完成今日数据准备。" }
+  }
+  const window = candidates.signal_window
+  return {
+    title: "最近 3 个交易日没有买点信号",
+    detail: `已检查信号日 ${window.start ?? "—"} 至 ${window.end ?? "—"} 的扫描结果。`,
+  }
+}
+
+function formatPercent(value: number | null | undefined) {
+  if (value === null || value === undefined) return "—"
+  return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`
 }
 
 const statusLabels: Record<string, string> = {
@@ -54,7 +96,13 @@ export function TodayPage() {
   const health = data.data_health
   const usable = Boolean(health?.decision_usable && data.review_context.usable_for_next_session)
   const preparing = dailyPrepare.isPreparing
-  const candidates = (data.scan_changes?.items ?? []).filter((item) => item.state === "new_hit").slice(0, 8)
+  const candidateData = data.today_candidates
+  const candidates = candidateData?.items ?? []
+  const empty = candidateEmpty(candidateData)
+  const scanNotes = (candidateData?.scans ?? []).map((scan) => {
+    const coverage = scan.coverage_rate === null || scan.coverage_rate === undefined ? "—" : `${(scan.coverage_rate * 100).toFixed(1)}%`
+    return `${scanKindLabels[scan.kind] ?? scan.kind}${scan.status === "partial" ? "（部分完成）" : ""} 覆盖 ${coverage}`
+  })
   const today = new Date().toISOString().slice(0, 10)
   const dueReviews = (watchlist.data?.items ?? []).filter(
     (item) => item.research_status !== "invalidated" && item.next_review_date && item.next_review_date <= today,
@@ -108,14 +156,24 @@ export function TodayPage() {
       </section>
 
       <section className="panel">
-        <div className="panel-title"><span>今日新增候选</span><Button asChild variant="ghost" size="sm"><Link to="/screeners">打开市场筛选</Link></Button></div>
+        <div className="panel-title"><span>{candidateHeading(candidateData)}</span><span className="candidate-actions">{candidateData?.total ? <Badge variant="outline">{candidateData.total > candidates.length ? `前 ${candidates.length} / ${candidateData.total}` : candidates.length}</Badge> : null}<Button asChild variant="ghost" size="sm"><Link to="/screeners">打开市场筛选</Link></Button></span></div>
+        {candidateData && (candidates.length || candidateData.scans.length) ? (
+          <p className="candidate-meta">
+            信号日 {candidateData.signal_window.start ?? "—"} 至 {candidateData.signal_window.end ?? "—"} 的买点 · {candidateData.ordering}
+            {scanNotes.length ? ` · ${scanNotes.join("，")}` : ""}
+            {candidateData.pending_scan_job_ids.length ? " · 新一轮扫描进行中" : ""}
+            {candidates.some((item) => item.unconfirmed) ? " · “待确认”表示信号在最新一根 K 线，后续可能改变" : ""}
+          </p>
+        ) : null}
+        {candidateData && !candidateData.is_current && candidates.length ? <p className="candidate-warning">这些候选不是基于最新交易日的数据，仅供历史复盘。</p> : null}
         {candidates.length ? <div className="candidate-grid">{candidates.map((item) => (
-          <article key={`${item.current_job_id}-${item.code}`}>
-            <div><strong>{item.code} {item.name}</strong><Badge variant="outline">{item.signal_type ?? "新命中"}</Badge></div>
-            <p>信号日期 {item.signal_date ?? "—"} · 评分 {item.score?.toFixed(1) ?? "—"}</p>
+          <article key={`${item.job_id}-${item.code}`}>
+            <div><strong>{item.code} {item.name}</strong><span className="candidate-badges">{item.unconfirmed ? <Badge variant="outline" className="candidate-unconfirmed" title="信号出现在最新一根 K 线，后续 K 线可能改变或取消它">待确认</Badge> : null}<Badge variant="outline">{signalLabels[item.signal_type ?? ""] ?? item.signal_type ?? "买点"}</Badge></span></div>
+            <p>信号日 {item.signal_date} · 信号价 {item.signal_price?.toFixed(2) ?? "—"} · 现价 {item.latest_price?.toFixed(2) ?? "—"}（{formatPercent(item.distance_pct)}）</p>
+            <p>{[item.industry, ...item.scan_kinds.map((kind) => scanKindLabels[kind] ?? kind)].filter(Boolean).join(" · ")}</p>
             <div><Button asChild size="sm"><Link to={`/stocks?id=${item.instrument_id}`}>验证个股</Link></Button>{item.instrument_id ? <Button variant="outline" size="sm" onClick={() => addWatch.mutate(item.instrument_id!)}><Star />加入研究</Button> : null}</div>
           </article>
-        ))}</div> : <EmptyPanel title="暂无新增候选" detail="运行市场筛选后，新命中会在这里进入个股验证流程。" />}
+        ))}</div> : <EmptyPanel title={empty.title} detail={empty.detail} />}
       </section>
 
       <section className="today-grid">

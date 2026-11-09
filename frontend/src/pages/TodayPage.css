@@ -21,6 +21,11 @@
 .readiness-list svg { width: 16px; }
 .review-list span { align-items: flex-start; flex-direction: column; }
 .review-list small { color: var(--muted-foreground); }
+.candidate-actions { display: inline-flex; align-items: center; gap: 6px; }
+.candidate-badges { display: inline-flex; gap: 4px; }
+.candidate-unconfirmed { border-color: var(--warning) !important; color: var(--warning) !important; }
+.candidate-meta { margin: -4px 0 10px; color: var(--muted-foreground); font-size: 12px; }
+.candidate-warning { margin: 0 0 10px; color: var(--warning, #b45309); font-size: 12px; }
 .candidate-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
 .candidate-grid article { padding: 13px; border: 1px solid var(--border); border-radius: 10px; }
 .candidate-grid article > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

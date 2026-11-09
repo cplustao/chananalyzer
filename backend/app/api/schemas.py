@@ -191,7 +191,7 @@ class DataRefreshJobCreate(ApiModel):
 
 class DailyPreparePayload(StrictPayload):
     lookback_days: int = Field(default=10, ge=1, le=3650)
-    run_screeners: bool = False
+    run_screeners: bool = True
     screening_preset: Literal["conservative", "balanced", "aggressive"] = "balanced"
 
 

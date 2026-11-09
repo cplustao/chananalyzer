@@ -911,7 +911,7 @@ export interface components {
             lookback_days: number;
             /**
              * Run Screeners
-             * @default false
+             * @default true
              */
             run_screeners: boolean;
             /**
