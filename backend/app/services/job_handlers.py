@@ -183,11 +183,28 @@ class JobHandlers:
         original_payload = job.payload
         job.payload = refresh_payload
         try:
-            results["market_data"] = stage("market_data", lambda: self._data_refresh(job))
+            results["market_data"] = stage(
+                "market_data", lambda: self._data_refresh(job, finalize_partial=False)
+            )
         finally:
             job.payload = original_payload
         if job.status != "running":
             return {"status": job.status, "stages": results, "blocking_stage": "market_data"}
+        # A few stocks failing (often suspensions the sources never report) must not stop the whole
+        # preparation. The quality gate and decision gate below still check coverage and block when the
+        # data is not good enough, so the failures are kept as warnings instead.
+        warnings: list[dict[str, Any]] = []
+        market_data = results["market_data"]
+        if isinstance(market_data, dict) and market_data.get("status") == "partial":
+            failed_codes = [
+                str(item["code"]) for item in market_data.get("errors") or [] if item.get("code")
+            ]
+            warnings.append({
+                "stage": "market_data",
+                "failed": int(market_data.get("failed") or len(failed_codes)),
+                "codes": failed_codes[:50],
+                "message": "部分股票行情未补齐，已由质量门禁判断覆盖率后继续",
+            })
 
         def verify_core() -> dict[str, Any]:
             snapshot = DataHealthService(self.session, get_settings()).snapshot()
@@ -232,6 +249,7 @@ class JobHandlers:
             (item for item in health.get("categories", []) if item.get("key") == "daily_bars"),
             {},
         )
+        job.failed = sum(item["failed"] for item in warnings)
         return {
             "status": "completed",
             "current_stage": None,
@@ -239,6 +257,7 @@ class JobHandlers:
             "coverage_rate": daily_health.get("coverage_rate", 0),
             "decision_usable": True,
             "queued_screening_jobs": queued,
+            "warnings": warnings,
         }
 
     def _limit_up_refresh(self, job: Job) -> dict[str, Any]:
@@ -941,7 +960,7 @@ class JobHandlers:
             extra={"job_id": job.id, "instrument_code": code, "include_ai": include_ai},
         )
         return result
-    def _data_refresh(self, job: Job) -> dict[str, Any]:
+    def _data_refresh(self, job: Job, *, finalize_partial: bool = True) -> dict[str, Any]:
         payload = job.payload or {}
         raw_start = payload.get("start_date")
         raw_end = payload.get("end_date")
@@ -1018,7 +1037,7 @@ class JobHandlers:
             DataHealthService(self.session, get_settings()).refresh_analysis_series()
         if result["status"] == "cancelled":
             self.jobs.mark_cancelled(job)
-        elif result["status"] == "partial":
+        elif result["status"] == "partial" and finalize_partial:
             job.failed = int(result["failed"])
             self.jobs.complete(job, result=result, partial=True)
         return result

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from types import SimpleNamespace
 
+import pytest
 from sqlalchemy import select
 
 from backend.app.core.config import get_settings
@@ -150,6 +151,74 @@ def test_data_health_cache_avoids_recomputing_snapshot(session, monkeypatch):
     assert service.cached_snapshot(max_age_seconds=300) == expected
 
 
+def _prepare_with_partial_market_data(session, monkeypatch, *, daily_bars_status):
+    job = Job(kind="daily.prepare", status="running", payload={"run_screeners": False})
+    session.add(job)
+    session.commit()
+    handler = JobHandlers.__new__(JobHandlers)
+    handler.session = session
+    handler.jobs = JobRepository(session)
+    ran: list[str] = []
+    handler._data_refresh = lambda _job, **_kwargs: {
+        "status": "partial",
+        "failed": 2,
+        "coverage_rate": 0.997,
+        "errors": [
+            {"code": "920023", "error": "补采后仍有 1 个交易日缺少可用行情"},
+            {"code": "920058", "error": "补采后仍有 10 个交易日缺少可用行情"},
+        ],
+    }
+    handler._limit_up_refresh = lambda _job: ran.append("limit_up") or {"status": "completed"}
+    handler._market_radar = lambda _job: ran.append("market_radar") or {"status": "completed"}
+    categories = [
+        {"key": "master_data", "status": "fresh"},
+        {"key": "daily_bars", "status": daily_bars_status, "coverage_rate": 0.997},
+        {"key": "trading_calendar", "status": "fresh"},
+    ]
+
+    class FakeHealth:
+        def __init__(self, *_args):
+            pass
+
+        def snapshot(self):
+            return {"categories": categories, "blocking_reasons": []}
+
+        def refresh_cache(self, **_kwargs):
+            return {"categories": categories, "blocking_reasons": [], "decision_usable": True}
+
+    monkeypatch.setattr(job_handlers_module, "DataHealthService", FakeHealth)
+    return handler, job, ran
+
+
+def test_daily_prepare_continues_past_a_few_failed_stocks_when_the_gate_passes(session, monkeypatch):
+    handler, job, ran = _prepare_with_partial_market_data(session, monkeypatch, daily_bars_status="fresh")
+
+    result = handler._daily_prepare(job)
+
+    assert job.status == "running"
+    assert result["status"] == "completed"
+    assert result["decision_usable"] is True
+    assert ran == ["limit_up", "market_radar"]
+    assert result["warnings"] == [{
+        "stage": "market_data",
+        "failed": 2,
+        "codes": ["920023", "920058"],
+        "message": "部分股票行情未补齐，已由质量门禁判断覆盖率后继续",
+    }]
+    assert job.failed == 2
+    # The incomplete stage is not checkpointed as done, so a resumed run fetches it again.
+    assert job.checkpoint["market_data"]["status"] == "failed"
+
+
+def test_daily_prepare_still_stops_when_partial_market_data_fails_the_gate(session, monkeypatch):
+    handler, job, ran = _prepare_with_partial_market_data(session, monkeypatch, daily_bars_status="partial")
+
+    with pytest.raises(ValueError, match="行情质量门禁未通过：daily_bars"):
+        handler._daily_prepare(job)
+
+    assert ran == []
+
+
 def test_daily_prepare_records_ordered_stages_and_decision_gate(session, monkeypatch):
     job = Job(kind="daily.prepare", status="running", payload={"run_screeners": False})
     session.add(job)
@@ -157,8 +226,9 @@ def test_daily_prepare_records_ordered_stages_and_decision_gate(session, monkeyp
     handler = JobHandlers.__new__(JobHandlers)
     handler.session = session
     handler.jobs = JobRepository(session)
-    def refresh_market_data(current_job):
+    def refresh_market_data(current_job, *, finalize_partial):
         assert current_job.payload["auto_backfill"] is True
+        assert finalize_partial is False
         return {"status": "completed", "coverage_rate": 1.0}
 
     handler._data_refresh = refresh_market_data
