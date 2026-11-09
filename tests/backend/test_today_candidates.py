@@ -284,3 +284,47 @@ def test_daily_prepare_queues_screens_by_default(session, monkeypatch):
     queued = [session.get(Job, job_id) for job_id in result["queued_screening_jobs"]]
     assert [item.kind for item in queued] == ["screen.hot", "screen.smart"]
     assert all(item.payload["scan_side"] == "buy" for item in queued)
+
+
+def test_decision_today_reports_daily_preparation_automation(client, session):
+    enabled = client.put(
+        "/api/v1/settings/schedules/weekday-daily-prepare",
+        json={
+            "job_kind": "daily.prepare", "hour": 17, "minute": 0, "weekdays": [1, 2, 3, 4, 5],
+            "enabled": True, "payload": {"run_screeners": True, "screening_preset": "balanced"},
+        },
+    )
+    assert enabled.status_code == 200
+    succeeded = Job(
+        kind="daily.prepare", status="completed", failed=15,
+        payload={"automation_schedule": "weekday-daily-prepare"},
+        result={"warnings": [{"stage": "market_data", "failed": 15, "codes": ["920023"], "message": "x"}]},
+        created_at=datetime(2026, 11, 6, 9), finished_at=datetime(2026, 11, 6, 9, 30),
+    )
+    failed = Job(
+        kind="daily.prepare", status="failed", failure_summary="行情质量门禁未通过：daily_bars",
+        payload={}, created_at=datetime(2026, 11, 9, 9), finished_at=datetime(2026, 11, 9, 9, 20),
+    )
+    session.add_all([succeeded, failed])
+    session.commit()
+
+    automation = client.get("/api/v1/decision/today").json()["automation"]
+
+    assert automation["enabled"] is True
+    assert (automation["hour"], automation["minute"]) == (17, 0)
+    assert automation["next_run_at"].endswith("+08:00")
+    assert automation["run_screeners"] is True
+    assert automation["last_success"]["id"] == succeeded.id
+    assert automation["last_success"]["scheduled"] is True
+    assert automation["last_success"]["finished_at"] == "2026-11-06T17:30:00+08:00"
+    assert automation["last_success"]["warnings"][0]["failed"] == 15
+    assert automation["latest_run"]["id"] == failed.id
+    assert automation["latest_run"]["error"] == "行情质量门禁未通过：daily_bars"
+
+
+def test_decision_today_reports_automation_off_without_runs(client):
+    automation = client.get("/api/v1/decision/today").json()["automation"]
+
+    assert automation["enabled"] is False
+    assert automation["latest_run"] is None
+    assert automation["last_success"] is None

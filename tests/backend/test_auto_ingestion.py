@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
@@ -14,6 +15,7 @@ from backend.app.domain.daily_refresh import (
 from backend.app.providers.market_data import CalendarSession, MarketBar
 from backend.app.repositories.ingestion import IngestionRepository
 from backend.app.repositories.jobs import JobRepository
+from backend.app.services import ingestion as ingestion_module
 from backend.app.services.ingestion import MAX_CONSECUTIVE_PROVIDER_OUTAGES, IngestionService
 from backend.app.services.job_handlers import JobHandlers
 
@@ -348,10 +350,43 @@ def test_provider_outage_stops_the_batch_early_and_keeps_saved_bars(session, ser
     result = service.refresh_bars()
 
     assert len(outage_calls) == MAX_CONSECUTIVE_PROVIDER_OUTAGES
+    assert result["stopped_for_outage"] is True
     assert result["status"] == "partial"
     assert result["succeeded"] == 1
     assert "提前停止" in result["errors"][0]["error"]
     assert set(trading_days(healthy.list_date, END)) == stored_dates(session, healthy)
+
+
+def test_slow_provider_outage_stops_after_ten_minutes_not_thirty_stocks(session, service, monkeypatch):
+    healthy = seed(session, through=date(2026, 7, 1))
+    for index in range(MAX_CONSECUTIVE_PROVIDER_OUTAGES + 10):
+        code = f"60{index:04d}"
+        session.add(Instrument(
+            code=code, ts_code=f"{code}.SH", exchange="SH", name=code, status="active", list_date=date(2026, 6, 1),
+        ))
+    session.commit()
+    real_fetch = service.provider.fetch_bars
+    clock = [0.0]
+    outage_calls = []
+
+    def slow_outage(**kwargs):
+        if kwargs["ts_code"] == healthy.ts_code:
+            return real_fetch(**kwargs)
+        clock[0] += 120  # each stock waits on socket timeouts before failing
+        outage_calls.append(kwargs["ts_code"])
+        raise RuntimeError("all daily market-data providers failed (baostock: 网络接收错误。)")
+
+    monkeypatch.setattr(service.provider, "fetch_bars", slow_outage)
+    monkeypatch.setattr(ingestion_module, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+    monkeypatch.setattr(IngestionRepository, "refresh_targets", lambda _self, _codes: [healthy, *session.scalars(
+        select(Instrument).where(Instrument.id != healthy.id).order_by(Instrument.code)
+    ).all()])
+
+    result = service.refresh_bars()
+
+    assert len(outage_calls) == 6
+    assert result["stopped_for_outage"] is True
+    assert "约 10 分钟" in result["errors"][0]["error"]
 
 
 def test_saved_calendar_fallback_cannot_claim_verified_history(session, service, monkeypatch):

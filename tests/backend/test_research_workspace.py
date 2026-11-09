@@ -231,7 +231,7 @@ def test_automation_schedule_can_be_configured_run_and_enqueued(client, session)
     assert {item["key"] for item in schedules.json()} == {"weekday-daily-prepare"}
     by_key = {item["key"]: item for item in schedules.json()}
     assert by_key["weekday-daily-prepare"]["job_kind"] == "daily.prepare"
-    assert by_key["weekday-daily-prepare"]["hour"] == 17
+    assert by_key["weekday-daily-prepare"]["hour"] == 18
     assert by_key["weekday-daily-prepare"]["payload"]["run_screeners"] is True
     updated = client.put(
         "/api/v1/settings/schedules/weekday-daily-prepare",

@@ -701,6 +701,11 @@ class FallbackMarketDataProvider(TushareMarketDataProvider):
             self.disabled_bar_providers["tushare"] = (
                 "adjusted research series uses BaoStock consistently; Tushare is reserved for raw bars"
             )
+            # A few AKShare bars on top of a BaoStock series become its newest source and hide the
+            # rest of it, so an outage stops the refresh instead of being patched over.
+            self.disabled_bar_providers["akshare"] = (
+                "adjusted research series uses BaoStock consistently; AKShare bars are not stitched into it"
+            )
 
     def end_batch(self) -> None:
         seen: set[int] = set()

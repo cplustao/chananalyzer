@@ -219,6 +219,31 @@ def test_tushare_printed_rate_limit_trips_cross_symbol_circuit(monkeypatch):
     assert provider.last_bar_provider_key == "baostock"
 
 
+def test_adjusted_series_never_falls_back_to_akshare_during_a_baostock_outage():
+    class DownProvider(ContractProvider):
+        def fetch_bars(self, **_kwargs):
+            raise RuntimeError("网络接收错误。")
+
+    akshare = ContractProvider("akshare", [_bar(27)])
+    provider = FallbackMarketDataProvider([DownProvider("baostock", []), akshare], [akshare])
+    provider.begin_batch(adjustment="QFQ")
+    kwargs = {
+        "ts_code": "000001.SZ",
+        "timeframe": "DAY",
+        "start_date": date(2026, 7, 27),
+        "end_date": date(2026, 7, 27),
+    }
+
+    # A few AKShare bars would become the newest source and hide the whole BaoStock series.
+    with pytest.raises(RuntimeError, match="all daily market-data providers failed"):
+        provider.fetch_bars(**kwargs, adjustment="QFQ")
+    assert [item.status for item in provider.last_bar_attempts] == ["rejected", "skipped"]
+
+    # Unadjusted bars (used for Beijing stocks) still fall back.
+    assert provider.fetch_bars(**kwargs, adjustment="NONE")
+    assert provider.last_bar_provider_key == "akshare"
+
+
 class _FakeBaoBarResult:
     error_code = "0"
     error_msg = "success"

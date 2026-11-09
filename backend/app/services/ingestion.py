@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from datetime import time as dt_time
@@ -30,6 +31,9 @@ ProgressCallback = Callable[[int, int, str], None]
 CancelCallback = Callable[[], bool]
 PROVIDERS_DOWN_ERROR = "all daily market-data providers failed"
 MAX_CONSECUTIVE_PROVIDER_OUTAGES = 30
+# Each failed stock can wait minutes on socket timeouts, so a streak is also cut off by time.
+MAX_PROVIDER_OUTAGE_SECONDS = 600
+MIN_OUTAGES_BEFORE_TIME_LIMIT = 3
 
 
 def _attempts(provider: HistoricalMarketDataProvider, attribute: str) -> list[dict[str, Any]]:
@@ -286,6 +290,8 @@ class IngestionService:
         rebased_codes: list[str] = []
         skipped = 0
         consecutive_outages = 0
+        outage_started_at = 0.0
+        stopped_for_outage = False
         try:
             try:
                 calendar = []
@@ -420,11 +426,22 @@ class IngestionService:
                     run.failed += 1
                     errors.append({"code": instrument.code, "error": sanitize_text(exc, limit=500)})
                     self.session.commit()
-                    consecutive_outages = consecutive_outages + 1 if PROVIDERS_DOWN_ERROR in str(exc) else 0
-                    if consecutive_outages >= MAX_CONSECUTIVE_PROVIDER_OUTAGES:
+                    if PROVIDERS_DOWN_ERROR in str(exc):
+                        if consecutive_outages == 0:
+                            outage_started_at = time.monotonic()
+                        consecutive_outages += 1
+                    else:
+                        consecutive_outages = 0
+                    outage_seconds = time.monotonic() - outage_started_at if consecutive_outages else 0.0
+                    if consecutive_outages >= MAX_CONSECUTIVE_PROVIDER_OUTAGES or (
+                        consecutive_outages >= MIN_OUTAGES_BEFORE_TIME_LIMIT
+                        and outage_seconds >= MAX_PROVIDER_OUTAGE_SECONDS
+                    ):
                         # Failing the rest one by one took hours. Saved bars stay, so a rerun resumes.
+                        stopped_for_outage = True
                         errors.insert(0, {
-                            "error": f"连续 {consecutive_outages} 只股票的所有数据源都失败，已提前停止，"
+                            "error": f"连续 {consecutive_outages} 只股票的所有数据源都失败"
+                            f"（约 {round(outage_seconds / 60)} 分钟），已提前停止，"
                             f"其余 {len(targets) - index} 只未处理；已写入的数据不会丢失，稍后重新运行会从缺口继续"
                         })
                         break
@@ -499,6 +516,7 @@ class IngestionService:
             "total": run.total,
             "succeeded": run.succeeded,
             "failed": run.failed,
+            "stopped_for_outage": stopped_for_outage,
             "bar_rows_written": rows_written,
             "calendar_rows_written": calendar_rows,
             "failed_codes": [str(item["code"]) for item in errors if item.get("code")],

@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import select
 
 from backend.app.core.config import get_settings
-from backend.app.db.models import Bar, DataHealthSnapshot, DataSource, Instrument, Job
+from backend.app.db.models import AutomationSchedule, Bar, DataHealthSnapshot, DataSource, Instrument, Job
 from backend.app.db.models.common import utcnow
 from backend.app.providers.market_data import (
     AkShareMarketDataProvider,
@@ -18,9 +18,11 @@ from backend.app.providers.market_data import (
 from backend.app.repositories.ingestion import IngestionRepository
 from backend.app.repositories.jobs import JobRepository
 from backend.app.services import job_handlers as job_handlers_module
+from backend.app.services import schedules as schedules_module
 from backend.app.services.bar_access import load_daily_bars
 from backend.app.services.data_health import DataHealthService
 from backend.app.services.job_handlers import JobHandlers
+from backend.app.services.schedules import DAILY_PREPARE_SCHEDULE_KEY, enqueue_due_schedules
 
 
 class Frame:
@@ -219,6 +221,68 @@ def test_daily_prepare_still_stops_when_partial_market_data_fails_the_gate(sessi
     assert ran == []
 
 
+def _prepare_stopped_by_outage(session, monkeypatch, payload):
+    # 17:10 Beijing time, so a 30-minute retry still falls on the same evening.
+    monkeypatch.setattr(schedules_module, "utcnow", lambda: datetime(2026, 11, 9, 9, 10))
+    schedule = AutomationSchedule(
+        key=DAILY_PREPARE_SCHEDULE_KEY, job_kind="daily.prepare", cron_expression="0 18 * * 1,2,3,4,5",
+        timezone="Asia/Shanghai", enabled=True, payload={"run_screeners": True},
+        next_run_at=datetime(2026, 11, 10, 10, 0),
+    )
+    job = Job(kind="daily.prepare", status="running", payload=payload)
+    session.add_all([schedule, job])
+    session.commit()
+    handler = JobHandlers.__new__(JobHandlers)
+    handler.session = session
+    handler.jobs = JobRepository(session)
+    ran: list[str] = []
+    handler._data_refresh = lambda _job, **_kwargs: {
+        "status": "partial", "failed": 6, "stopped_for_outage": True, "errors": [],
+    }
+    handler._limit_up_refresh = lambda _job: ran.append("limit_up") or {"status": "completed"}
+    return handler, job, schedule, ran
+
+
+def test_scheduled_prepare_stopped_by_an_outage_retries_in_half_an_hour(session, monkeypatch):
+    handler, job, schedule, ran = _prepare_stopped_by_outage(
+        session, monkeypatch, {"run_screeners": True, "automation_schedule": DAILY_PREPARE_SCHEDULE_KEY},
+    )
+
+    with pytest.raises(ValueError, match="已安排 17:40 自动重试"):
+        handler._daily_prepare(job)
+
+    assert ran == []
+    session.refresh(schedule)
+    assert schedule.next_run_at == datetime(2026, 11, 9, 9, 40)
+    assert schedule.payload["outage_retry"] == 1
+
+    # The retry carries its count into the job, and the next regular run starts from zero again.
+    monkeypatch.setattr(schedules_module, "utcnow", lambda: datetime(2026, 11, 9, 9, 40))
+    enqueue_due_schedules(session, max_attempts=1)
+    retry = session.scalars(select(Job).where(Job.id != job.id, Job.kind == "daily.prepare")).one()
+    assert retry.payload["outage_retry"] == 1
+    session.refresh(schedule)
+    assert "outage_retry" not in schedule.payload
+    assert schedule.next_run_at == datetime(2026, 11, 9, 10, 0)
+
+
+def test_outage_retries_stop_after_three_and_manual_runs_are_not_retried(session, monkeypatch):
+    handler, job, schedule, _ran = _prepare_stopped_by_outage(
+        session, monkeypatch,
+        {"run_screeners": True, "automation_schedule": DAILY_PREPARE_SCHEDULE_KEY, "outage_retry": 3},
+    )
+    with pytest.raises(ValueError, match="自动重试已用完"):
+        handler._daily_prepare(job)
+    session.refresh(schedule)
+    assert schedule.next_run_at == datetime(2026, 11, 10, 10, 0)
+
+    manual = Job(kind="daily.prepare", status="running", payload={"run_screeners": True})
+    session.add(manual)
+    session.commit()
+    with pytest.raises(ValueError, match="请稍后重新运行每日准备"):
+        handler._daily_prepare(manual)
+
+
 def test_daily_prepare_records_ordered_stages_and_decision_gate(session, monkeypatch):
     job = Job(kind="daily.prepare", status="running", payload={"run_screeners": False})
     session.add(job)
@@ -226,8 +290,9 @@ def test_daily_prepare_records_ordered_stages_and_decision_gate(session, monkeyp
     handler = JobHandlers.__new__(JobHandlers)
     handler.session = session
     handler.jobs = JobRepository(session)
-    def refresh_market_data(current_job, *, finalize_partial):
-        assert current_job.payload["auto_backfill"] is True
+    def refresh_market_data(current_job, *, finalize_partial, payload):
+        assert payload["auto_backfill"] is True
+        assert current_job.payload == {"run_screeners": False}
         assert finalize_partial is False
         return {"status": "completed", "coverage_rate": 1.0}
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import delete, func, select
@@ -40,6 +40,7 @@ from backend.app.services.limit_up_analysis import (
 )
 from backend.app.services.market_radar import MarketRadarService
 from backend.app.services.market_screening import HotStockService
+from backend.app.services.schedules import OUTAGE_RETRY_PAYLOAD_KEY, TIMEZONE, schedule_outage_retry
 from backend.app.services.secrets import SecretService
 from backend.app.services.stock_analysis import StockAnalysisService
 from backend.app.services.stock_analysis import report_metadata as stock_report_metadata
@@ -180,16 +181,16 @@ class JobHandlers:
             "timeframe": "DAY",
             "refresh_master_data": True,
         }
-        original_payload = job.payload
-        job.payload = refresh_payload
-        try:
-            results["market_data"] = stage(
-                "market_data", lambda: self._data_refresh(job, finalize_partial=False)
-            )
-        finally:
-            job.payload = original_payload
+        # Passed in rather than written over job.payload, so the job keeps its own payload (and the
+        # schedule that started it) even if the worker stops during this stage.
+        results["market_data"] = stage(
+            "market_data",
+            lambda: self._data_refresh(job, finalize_partial=False, payload=refresh_payload),
+        )
         if job.status != "running":
             return {"status": job.status, "stages": results, "blocking_stage": "market_data"}
+        if isinstance(results["market_data"], dict) and results["market_data"].get("stopped_for_outage"):
+            raise ValueError(self._outage_retry_message(payload))
         # A few stocks failing (often suspensions the sources never report) must not stop the whole
         # preparation. The quality gate and decision gate below still check coverage and block when the
         # data is not good enough, so the failures are kept as warnings instead.
@@ -259,6 +260,19 @@ class JobHandlers:
             "queued_screening_jobs": queued,
             "warnings": warnings,
         }
+
+    def _outage_retry_message(self, payload: dict[str, Any]) -> str:
+        message = "行情数据源暂时不可用，已提前停止，已写入的数据会保留"
+        schedule_key = payload.get("automation_schedule")
+        if not schedule_key:
+            return message + "；请稍后重新运行每日准备"
+        retry_at = schedule_outage_retry(
+            self.session, str(schedule_key), int(payload.get(OUTAGE_RETRY_PAYLOAD_KEY) or 0)
+        )
+        if retry_at is None:
+            return message + "；今天的自动重试已用完，请稍后手动运行每日准备"
+        local = retry_at.replace(tzinfo=UTC).astimezone(TIMEZONE)
+        return message + f"；已安排 {local:%H:%M} 自动重试"
 
     def _limit_up_refresh(self, job: Job) -> dict[str, Any]:
         payload = job.payload or {}
@@ -974,8 +988,10 @@ class JobHandlers:
             extra={"job_id": job.id, "instrument_code": code, "include_ai": include_ai},
         )
         return result
-    def _data_refresh(self, job: Job, *, finalize_partial: bool = True) -> dict[str, Any]:
-        payload = job.payload or {}
+    def _data_refresh(
+        self, job: Job, *, finalize_partial: bool = True, payload: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        payload = payload if payload is not None else (job.payload or {})
         raw_start = payload.get("start_date")
         raw_end = payload.get("end_date")
         start_date = date.fromisoformat(str(raw_start)) if raw_start else None

@@ -332,6 +332,31 @@ export type TodayCandidates = {
   pending_scan_job_ids: string[]
 }
 
+export type AutomationRun = {
+  id: string
+  status: string
+  message?: string | null
+  error?: string | null
+  scheduled: boolean
+  created_at?: string | null
+  finished_at?: string | null
+  failed: number
+  warnings: Array<{ stage: string; failed: number; codes: string[]; message: string }>
+  blocking_stage?: string | null
+  queued_screening_jobs: string[]
+}
+
+export type AutomationStatus = {
+  schedule_key: string
+  enabled: boolean
+  hour?: number | null
+  minute?: number | null
+  next_run_at?: string | null
+  run_screeners: boolean
+  latest_run?: AutomationRun | null
+  last_success?: AutomationRun | null
+}
+
 export type DecisionToday = {
   review_context: ReviewContext
   market_facts: MarketFact[]
@@ -357,6 +382,7 @@ export type DecisionToday = {
   watchlist_hits?: Array<{ watchlist: string; item_id: string; instrument_id: number; change: TodayCandidate }> | null
   data_health?: DataHealth | null
   attention_jobs?: { failed: Array<Pick<Job, "id" | "kind" | "status" | "message" | "created_at">>; pending: Array<Pick<Job, "id" | "kind" | "status" | "message" | "created_at">> } | null
+  automation?: AutomationStatus | null
   missing_or_stale_modules: string[]
 }
 
