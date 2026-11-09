@@ -1,10 +1,13 @@
+import socket
 import sys
+import threading
 from datetime import date
 from types import SimpleNamespace
 
 import pytest
 from pydantic import SecretStr
 
+from backend.app.providers import market_data
 from backend.app.providers.market_data import (
     BaoStockMarketDataProvider,
     TushareMarketDataProvider,
@@ -93,6 +96,48 @@ def test_baostock_failure_does_not_poison_later_stocks(monkeypatch):
 
     assert [bar.close for bar in fetch_baostock_bars(provider)] == [10.5]
     assert fake.logins == 3
+
+
+def send_through_real_baostock(monkeypatch, serve):
+    """Run BaoStock's own receive loop against a local server, in a thread a spin cannot block."""
+    socketutil = pytest.importorskip("baostock.util.socketutil")
+    constants = pytest.importorskip("baostock.common.contants")
+    monkeypatch.setattr(socketutil, "socket", socketutil.socket)
+    server = socket.create_server(("127.0.0.1", 0))
+    threading.Thread(target=serve, args=(server,), daemon=True).start()
+    monkeypatch.setattr(constants, "BAOSTOCK_SERVER_IP", "127.0.0.1")
+    monkeypatch.setattr(constants, "BAOSTOCK_SERVER_PORT", server.getsockname()[1])
+    monkeypatch.setattr(market_data, "BAOSTOCK_SOCKET_TIMEOUT_SECONDS", 0.2)
+
+    market_data._guard_baostock_connections()
+    socketutil.SocketUtil().connect()
+    replies = []
+    sender = threading.Thread(target=lambda: replies.append(socketutil.send_msg("ping")), daemon=True)
+    sender.start()
+    sender.join(5)
+    server.close()
+
+    assert not sender.is_alive(), "BaoStock's receive loop did not end"
+    return replies
+
+
+def test_baostock_receive_loop_ends_when_the_server_closes(monkeypatch):
+    def close_after_request(server):
+        connection, _ = server.accept()
+        connection.recv(1024)
+        connection.close()
+
+    assert send_through_real_baostock(monkeypatch, close_after_request) == [None]
+
+
+def test_baostock_receive_loop_ends_when_the_server_goes_silent(monkeypatch):
+    held = []
+
+    def hold_connection(server):
+        held.append(server.accept()[0])
+
+    assert send_through_real_baostock(monkeypatch, hold_connection) == [None]
+    held[0].close()
 
 
 def test_akshare_provider_falls_back_to_eastmoney_http(monkeypatch):
