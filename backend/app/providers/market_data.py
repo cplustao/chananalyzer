@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import io
+import logging
 import math
 import os
+import socket
 import time
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from datetime import date, datetime
+from types import SimpleNamespace
 from typing import Any, Protocol
 
 from backend.app.core.errors import sanitize_text
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -370,6 +375,40 @@ def _exchange_for_code(code: str) -> str:
     return "BJ" if code.startswith(("4", "8", "920")) else "SH" if code.startswith(("5", "6", "9")) else "SZ"
 
 
+BAOSTOCK_SOCKET_TIMEOUT_SECONDS = 60.0
+
+
+class _BaoStockSocket(socket.socket):
+    def recv(self, *args: Any, **kwargs: Any) -> bytes:
+        data = super().recv(*args, **kwargs)
+        if not data:
+            raise ConnectionError("BaoStock closed the connection")
+        return data
+
+
+def _new_baostock_socket(*args: Any, **kwargs: Any) -> socket.socket:
+    connection = _BaoStockSocket(*args, **kwargs)
+    connection.settimeout(BAOSTOCK_SOCKET_TIMEOUT_SECONDS)
+    return connection
+
+
+def _guard_baostock_connections() -> None:
+    """Keep a dropped connection from hanging the worker.
+
+    BaoStock's receive loop has no timeout and spins forever once the server closes, because recv
+    keeps returning b"". Errors raised here reach its own handler, which reports a network error
+    that fetch_bars retries on a new connection.
+    """
+    try:
+        from baostock.util import socketutil
+    except ImportError:
+        logger.warning("BaoStock socket module not found; dropped connections may hang the worker")
+        return
+    socketutil.socket = SimpleNamespace(
+        socket=_new_baostock_socket, AF_INET=socket.AF_INET, SOCK_STREAM=socket.SOCK_STREAM,
+    )
+
+
 class BaoStockMarketDataProvider:
     key = "baostock"
     name = "BaoStock"
@@ -383,6 +422,7 @@ class BaoStockMarketDataProvider:
             return self._client
         import baostock as bs
 
+        _guard_baostock_connections()
         login = bs.login()
         if getattr(login, "error_code", "0") != "0":
             raise RuntimeError(getattr(login, "error_msg", "BaoStock login failed"))
