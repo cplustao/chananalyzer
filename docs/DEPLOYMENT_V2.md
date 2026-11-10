@@ -130,6 +130,17 @@ chan-backup verify <backup-name.zip>
 
 恢复会检查压缩包白名单、路径、SHA-256、SQLite 完整性和 Alembic revision，并在替换前创建 `.pre-restore-*` 回滚副本。若恢复失败，工具会尝试恢复原数据库；仍应保留异机备份。
 
+## 信号后验（v0）
+
+统计扫描当时落库的买点之后 5/10/20 个交易日的表现，并与同期全市场个股收益中位数对比；另统计各市场雷达状态之后的市场表现。只读数据库，不写入任何内容：
+
+```bash
+python -m backend.app.signal_outcomes_cli          # Markdown 报告
+python -m backend.app.signal_outcomes_cli --json   # 原始数据
+```
+
+入场为扫描数据截止日收盘，不用信号日，避免用到当时还不存在的 K 线。样本少于 30 个或入场日少于 5 天时只显示数量。报告未计交易成本、涨停买不进和幸存者偏差，只用于检验工具本身，不构成投资建议。
+
 ## PostgreSQL 外部备份
 
 应用内备份接口对 PostgreSQL 返回 `external_required`。推荐在数据库主机使用官方工具，并让备份文件进入独立、加密的存储：
