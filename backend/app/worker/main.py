@@ -6,10 +6,13 @@ import signal
 import socket
 import time
 import uuid
+from datetime import timedelta
 
 from backend.app.core.config import get_settings
 from backend.app.core.logging import configure_logging
+from backend.app.db.models.common import utcnow
 from backend.app.db.session import SessionLocal
+from backend.app.repositories.ingestion import IngestionRepository
 from backend.app.repositories.jobs import JobRepository
 from backend.app.services.job_handlers import JobHandlers
 from backend.app.services.schedules import enqueue_due_schedules
@@ -37,6 +40,9 @@ def run() -> None:
         recovered = repository.recover_stale()
         if recovered:
             logger.info("Recovered %s stale jobs", recovered)
+        closed = IngestionRepository(session).close_abandoned_runs(live_job_since=utcnow() - timedelta(minutes=5))
+        if closed:
+            logger.info("Closed %s ingestion runs abandoned by a stopped worker", closed)
     logger.info("ChanAnalyzer worker started", extra={"worker_instance_id": worker_instance_id})
     last_schedule_check = 0.0
     while not _stop:
