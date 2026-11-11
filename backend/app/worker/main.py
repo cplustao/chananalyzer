@@ -49,12 +49,18 @@ def run() -> None:
         with SessionLocal() as session:
             if time.monotonic() - last_schedule_check >= 30:
                 try:
+                    # Jobs of a worker killed and restarted within the stale window are still
+                    # "running" at startup; reclaim them here once their heartbeat goes stale.
+                    # This worker runs one job at a time, so none of its own jobs are running now.
+                    recovered = JobRepository(session, worker_instance_id).recover_stale()
+                    if recovered:
+                        logger.info("Recovered %s stale jobs", recovered)
                     enqueued = enqueue_due_schedules(session, settings.worker_max_attempts)
                     if enqueued:
                         logger.info("Enqueued %s scheduled jobs", enqueued)
                 except Exception:
                     session.rollback()
-                    logger.exception("Unable to enqueue scheduled jobs")
+                    logger.exception("Worker housekeeping (stale jobs, schedules) failed")
                 last_schedule_check = time.monotonic()
             repository = JobRepository(session, worker_instance_id)
             repository.touch_worker()
