@@ -389,6 +389,48 @@ def test_slow_provider_outage_stops_after_ten_minutes_not_thirty_stocks(session,
     assert "约 10 分钟" in result["errors"][0]["error"]
 
 
+def test_saved_calendar_is_reused_and_only_recent_days_are_fetched(session, service, monkeypatch):
+    seed(session, through=END)
+    repository = IngestionRepository(session)
+    today = datetime.now(ingestion_module.ZoneInfo("Asia/Shanghai")).date()
+    repository.upsert_calendar(service.provider.fetch_calendar(start_date=END - timedelta(days=3000), end_date=today), source="saved")
+    session.commit()
+    requests = []
+    original = service.provider.fetch_calendar
+
+    def recording_calendar(**kwargs):
+        requests.append((kwargs["start_date"], kwargs["end_date"]))
+        return original(**kwargs)
+
+    monkeypatch.setattr(service.provider, "fetch_calendar", recording_calendar)
+    result = service.refresh_bars()
+
+    # One request for the last month instead of one per year of history.
+    assert requests == [(today - timedelta(days=ingestion_module.CALENDAR_REFETCH_DAYS), today)]
+    assert result["status"] == "completed"
+    assert result["history_complete"] is True
+
+
+def test_calendar_with_a_gap_is_fetched_again_from_the_start(session, service, monkeypatch):
+    seed(session, through=END)
+    repository = IngestionRepository(session)
+    today = datetime.now(ingestion_module.ZoneInfo("Asia/Shanghai")).date()
+    saved = service.provider.fetch_calendar(start_date=END - timedelta(days=3000), end_date=today)
+    repository.upsert_calendar([item for item in saved if item.trade_date != END - timedelta(days=100)], source="saved")
+    session.commit()
+    requests = []
+    original = service.provider.fetch_calendar
+
+    def recording_calendar(**kwargs):
+        requests.append(kwargs["start_date"])
+        return original(**kwargs)
+
+    monkeypatch.setattr(service.provider, "fetch_calendar", recording_calendar)
+    service.refresh_bars()
+
+    assert requests[0] < END - timedelta(days=100)
+
+
 def test_saved_calendar_fallback_cannot_claim_verified_history(session, service, monkeypatch):
     seed(session, through=END)
     repository = IngestionRepository(session)
