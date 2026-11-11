@@ -152,6 +152,13 @@ python -m backend.app.bar_audit_cli --repair   # 把确认有问题的序列标�
 
 AKShare 不可用时，可疑项一律不算“确认有问题”，也就不会被修复。
 
+每日准备如果反复报告同几只股票“行情未补齐”，多半是停牌日：数据源本来就没有那几天的数据。下面的命令用 AKShare 逐日核对，确认也没有交易的日子，按 BaoStock 的停牌约定写入当天的停牌 K 线：价格等于前一日收盘价，成交量为 0。这类 K 线不参与缠论计算，后续刷新也不会再去请求这些日期：
+
+```bash
+python -m backend.app.bar_audit_cli --suspensions               # 默认处理最近一次每日准备报告的缺口
+python -m backend.app.bar_audit_cli --suspensions --codes 920058
+```
+
 ## PostgreSQL 外部备份
 
 应用内备份接口对 PostgreSQL 返回 `external_required`。推荐在数据库主机使用官方工具，并让备份文件进入独立、加密的存储：

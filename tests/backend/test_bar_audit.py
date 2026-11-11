@@ -66,3 +66,38 @@ def test_unreachable_other_source_confirms_nothing(session):
     session.commit()
 
     assert confirm_with_other_source(find_beyond_limit_jumps(session, since=START), lambda *_: {}) == []
+
+
+def test_gaps_the_other_source_also_lacks_become_suspension_bars(session):
+    from backend.app.db.models import Bar, TradingCalendar
+    from backend.app.services.bar_access import analysis_series_summary
+    from backend.app.services.bar_audit import fill_confirmed_suspensions, series_gaps
+
+    days = [START + timedelta(days=i) for i in range(10)]
+    for day in days:
+        session.add(TradingCalendar(exchange="CN", trade_date=day, is_open=True))
+    instrument = Instrument(code="920058", ts_code="920058.BJ", exchange="BJ", name="华洋赛车", status="active")
+    session.add(instrument)
+    session.flush()
+    repository = IngestionRepository(session)
+    source = repository.data_source("tushare", "tushare")
+    saved = [day for i, day in enumerate(days) if i not in (3, 4, 6)]
+    repository.upsert_bars(
+        instrument_id=instrument.id, timeframe="DAY", adjustment="NONE", data_source_id=source.id,
+        bars=[MarketBar(datetime.combine(day, datetime.min.time()), 10 + i, 11 + i, 9 + i, 10 + i, 100, 1000)
+              for i, day in enumerate(saved)],
+    )
+    session.commit()
+
+    gaps = series_gaps(session, instrument, end=days[-1])
+    assert gaps == [days[3], days[4], days[6]]
+    # The other source traded on day 6, so only days 3 and 4 are confirmed suspensions.
+    written = fill_confirmed_suspensions(session, instrument, gaps, {day for day in days if day not in (days[3], days[4])})
+    session.commit()
+
+    assert written == [days[3], days[4]]
+    marker = session.query(Bar).filter(Bar.instrument_id == instrument.id, Bar.bar_time == datetime.combine(days[3], datetime.min.time())).one()
+    assert (marker.open, marker.close, marker.volume, marker.trade_status, marker.data_source_id) == (12.0, 12.0, 0.0, "suspended", source.id)
+    assert series_gaps(session, instrument, end=days[-1]) == [days[6]]
+    # Suspension bars are not analysis input.
+    assert analysis_series_summary(session, instrument.id)[0] == 7
