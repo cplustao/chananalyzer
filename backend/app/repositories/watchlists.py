@@ -39,8 +39,11 @@ class WatchlistRepository:
         invalidation_condition: str | None = None, next_action: str | None = None,
         next_review_date=None, research_status: str = "watching",
     ) -> Watchlist:
-        if self.session.get(Instrument, instrument_id) is None:
-            raise ValueError("股票不存在")
+        instrument = self.session.get(Instrument, instrument_id)
+        if instrument is None:
+            raise LookupError("股票不存在")
+        if instrument.asset_type != "stock":
+            raise ValueError("指数和其他非个股品种不能加入研究计划")
         watchlist = self.get_default(user_id)
         item = self.session.scalar(
             select(WatchlistItem).where(

@@ -34,3 +34,6 @@
 .watchlist-status-filter { width: 150px; }
 .editor-form { overflow-y: auto; padding-bottom: 24px; }
 @media (max-width: 680px) { .filter-panel { align-items: stretch; flex-direction: column; } .watchlist-status-filter { width: 100%; } }
+.plan-draft-note { display: grid; gap: 6px; justify-items: start; padding: 9px 11px; border: 1px solid #3c4a5e; border-radius: 6px; background: rgba(80, 120, 170, 0.08); font-size: 12px; line-height: 1.6; }
+.plan-draft-note p { margin: 0; }
+.plan-draft-warning { color: #e0a14a; }

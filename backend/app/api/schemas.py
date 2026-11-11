@@ -327,6 +327,22 @@ class WatchlistView(ApiModel):
     items: list[WatchlistItemView]
 
 
+class ResearchPlanDraftBasis(ApiModel):
+    structure_date: date
+    algorithm_version: str | None
+    history_sufficient: bool
+    analysis_bar_count: int
+
+
+class ResearchPlanDraftView(ApiModel):
+    thesis: str
+    confirmation_trigger: str
+    invalidation_condition: str
+    next_action: str
+    next_review_date: date
+    basis: ResearchPlanDraftBasis
+
+
 class ScheduleUpdate(ApiModel):
     job_kind: Literal[
         "market_radar.refresh",
