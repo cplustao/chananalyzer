@@ -21,6 +21,7 @@ from backend.app.domain.daily_refresh import (
     plan_daily_refresh,
 )
 from backend.app.providers.market_data import (
+    CalendarSession,
     HistoricalMarketDataProvider,
     validate_instruments,
     validate_market_bars,
@@ -34,6 +35,22 @@ MAX_CONSECUTIVE_PROVIDER_OUTAGES = 30
 # Each failed stock can wait minutes on socket timeouts, so a streak is also cut off by time.
 MAX_PROVIDER_OUTAGE_SECONDS = 600
 MIN_OUTAGES_BEFORE_TIME_LIMIT = 3
+# Past trading calendars do not change, so a gap-free saved calendar is reused and
+# only this many recent days are fetched again (for late holiday announcements).
+# Fetching all history every day spent Tushare's trade_cal quota of 5 calls a day.
+CALENDAR_REFETCH_DAYS = 30
+
+
+def _contiguous_from(saved: list[CalendarSession], start: date) -> list[CalendarSession]:
+    """The saved calendar days from start onward, up to the first missing day."""
+    prefix: list[CalendarSession] = []
+    expected = start
+    for item in saved:
+        if item.trade_date != expected:
+            break
+        prefix.append(item)
+        expected += timedelta(days=1)
+    return prefix
 
 
 def _attempts(provider: HistoricalMarketDataProvider, attribute: str) -> list[dict[str, Any]]:
@@ -294,16 +311,27 @@ class IngestionService:
         stopped_for_outage = False
         try:
             try:
-                calendar = []
                 cursor = start
+                reused: list[CalendarSession] = []
+                if automatic:
+                    known = _contiguous_from(
+                        self.repository.saved_calendar(start_date=start, end_date=calendar_end), start
+                    )
+                    refetch_from = known[-1].trade_date - timedelta(days=CALENDAR_REFETCH_DAYS) if known else start
+                    if refetch_from > start:
+                        reused = [item for item in known if item.trade_date < refetch_from]
+                        cursor = refetch_from
+                fetched: list[CalendarSession] = []
                 while cursor <= calendar_end:
                     chunk_end = min(calendar_end, cursor + timedelta(days=364)) if automatic else calendar_end
-                    calendar.extend(self.provider.fetch_calendar(start_date=cursor, end_date=chunk_end))
+                    fetched.extend(self.provider.fetch_calendar(start_date=cursor, end_date=chunk_end))
                     provider_chain.extend(_attempts(self.provider, "last_calendar_attempts"))
                     cursor = chunk_end + timedelta(days=1)
                 calendar_source = (
                     getattr(self.provider, "last_calendar_provider_key", None) or self.provider.key
                 )
+                calendar = [*reused, *fetched]
+                to_store = fetched
             except Exception as exc:
                 provider_chain.extend(_attempts(self.provider, "last_calendar_attempts"))
                 calendar = self.repository.saved_calendar(start_date=start, end_date=calendar_end)
@@ -313,7 +341,9 @@ class IngestionService:
                 run.freshness = "stale"
                 if automatic:
                     errors.append({"error": "交易日历刷新失败，历史完整性待确认：" + sanitize_text(exc, limit=300)})
-            calendar_rows = self.repository.upsert_calendar(calendar, source=calendar_source)
+                to_store = calendar
+            # Reused days are already saved with the source that fetched them.
+            calendar_rows = self.repository.upsert_calendar(to_store, source=calendar_source)
             self.session.commit()
             open_dates = sorted({item.trade_date for item in calendar if item.is_open and item.trade_date <= end})
             if automatic and not open_dates:
