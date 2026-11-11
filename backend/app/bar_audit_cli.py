@@ -25,6 +25,7 @@ from backend.app.services.bar_audit import (
     confirm_with_other_source,
     fill_confirmed_suspensions,
     find_beyond_limit_jumps,
+    is_known_source_error,
     series_gaps,
 )
 from backend.app.services.data_health import expected_trade_date
@@ -112,10 +113,12 @@ def run() -> None:
                 return {}
             return {bar.bar_time.date(): bar.close for bar in bars}
 
-        broken = confirm_with_other_source(suspects, fetch_closes)
+        confirmed = confirm_with_other_source(suspects, fetch_closes)
+        broken = [jump for jump in confirmed if not is_known_source_error(jump)]
         report = {
             "suspects": len(suspects),
             "broken": [jump.as_dict() for jump in broken],
+            "known_source_errors": [jump.as_dict() for jump in confirmed if is_known_source_error(jump)],
             "repair_job_id": None,
         }
         if arguments.repair and broken:

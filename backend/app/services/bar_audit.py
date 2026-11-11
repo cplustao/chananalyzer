@@ -23,6 +23,12 @@ from backend.app.services.bar_access import preferred_adjustment
 FIRST_SESSIONS_WITHOUT_LIMIT = 5
 # Allowed gap between the stored move and the other source's move on the same day.
 VERIFY_TOLERANCE_POINTS = 2.0
+# Bars the primary source itself serves wrong (checked 2026-11-11 against BaoStock and AKShare).
+# Re-downloading cannot fix them, so --repair leaves them alone; they are still reported.
+KNOWN_SOURCE_ERRORS = {
+    ("000981", date(2022, 2, 25)),  # BaoStock close 1.20, AKShare 2.00 on the day trading resumed
+    ("003038", date(2022, 3, 29)),  # BaoStock close 27.99, AKShare 34.27
+}
 
 
 @dataclass(frozen=True)
@@ -168,3 +174,8 @@ def fill_confirmed_suspensions(
             data_source_id=source_id, bars=markers,
         )
     return [marker.bar_time.date() for marker in markers]
+
+
+def is_known_source_error(jump: Jump) -> bool:
+    # The bad bar also distorts the next day's move, so both days are covered.
+    return any(jump.code == code and 0 <= (jump.day - day).days <= 4 for code, day in KNOWN_SOURCE_ERRORS)
