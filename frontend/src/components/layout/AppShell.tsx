@@ -10,6 +10,8 @@ import {
   Gauge,
   LoaderCircle,
   CalendarCheck2,
+  ChevronDown,
+  ChevronRight,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
@@ -22,7 +24,7 @@ import {
   TrendingUp,
   Trash2,
 } from "lucide-react"
-import { NavLink, Outlet, useNavigate } from "react-router-dom"
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom"
 import { formatDate } from "@/lib/format-date"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -45,8 +47,6 @@ const groups = [
     items: [
       { to: "/stocks", label: "个股分析", icon: TrendingUp },
       { to: "/watchlist", label: "自选股", icon: Star },
-      { to: "/limit-ups", label: "涨停分析", icon: Sparkles },
-      { to: "/ipos", label: "新股分析", icon: CircleDot },
     ],
   },
   {
@@ -58,9 +58,16 @@ const groups = [
   },
   {
     label: "系统",
+    items: [{ to: "/settings", label: "设置", icon: Settings }],
+  },
+  {
+    // Low-frequency pages stay one click away so the daily flow keeps a short menu.
+    label: "更多",
+    more: true,
     items: [
+      { to: "/limit-ups", label: "涨停分析", icon: Sparkles },
+      { to: "/ipos", label: "新股分析", icon: CircleDot },
       { to: "/help", label: "帮助中心", icon: BookOpen },
-      { to: "/settings", label: "设置", icon: Settings },
     ],
   },
 ]
@@ -89,12 +96,23 @@ function jobResultErrors(job: Job): JobResultError[] {
 }
 
 function Navigation({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
+  const { pathname } = useLocation()
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreListId = useId()
   return (
     <nav className="side-nav">
-      {groups.map((group) => (
-        <section key={group.label}>
-          <div className="nav-group-label">{collapsed ? "" : group.label}</div>
-          {group.items.map((item) => (
+      {groups.map((group) => {
+        const inMore = Boolean(group.more) && group.items.some((item) => pathname.startsWith(item.to))
+        // The current page is always shown, and an icon-only sidebar has no room for a toggle.
+        const open = !group.more || collapsed || moreOpen || inMore
+        return (
+        <section key={group.label} id={group.more ? moreListId : undefined}>
+          {group.more && !collapsed ? (
+            <button type="button" className="nav-group-label nav-more-toggle" aria-expanded={open} aria-controls={moreListId} onClick={() => setMoreOpen(!open)} disabled={inMore}>
+              {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}{group.label}
+            </button>
+          ) : <div className="nav-group-label">{collapsed ? "" : group.label}</div>}
+          {open ? group.items.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -106,9 +124,10 @@ function Navigation({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
               <item.icon size={17} />
               {collapsed ? null : <span>{item.label}</span>}
             </NavLink>
-          ))}
+          )) : null}
         </section>
-      ))}
+        )
+      })}
     </nav>
   )
 }
@@ -371,7 +390,10 @@ function JobCenter() {
                 </div>
                 <Progress value={Math.round(job.progress ?? 0)} />
                 <small className="job-summary">
-                  {job.message ?? "任务处理中"} · 已处理 {job.completed}/{job.total || "—"} · 成功 {succeeded} · 失败 {job.failed}
+                  {job.kind === "daily.prepare"
+                    // Daily prepare counts stages, while failed counts stocks left unfilled; they are not comparable.
+                    ? `${job.message ?? "任务处理中"}${job.failed ? ` · ${job.failed} 只行情未补齐` : ""}`
+                    : `${job.message ?? "任务处理中"} · 已处理 ${job.completed}/${job.total || "—"} · 成功 ${succeeded} · 失败 ${job.failed}`}
                 </small>
                 <small className="job-time">提交时间 {formatDate(job.created_at)}{job.finished_at ? ` · 完成时间 ${formatDate(job.finished_at)}` : ""}</small>
                 {job.error ? <p className="error-text">{job.error}</p> : null}

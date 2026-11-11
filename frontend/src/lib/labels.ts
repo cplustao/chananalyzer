@@ -10,6 +10,7 @@ const JOB_KIND_LABELS: Record<string, string> = {
   "ipo.analyze": "新股批量分析",
   "stock.analyze": "个股研究分析",
   "data.refresh": "行情数据更新",
+  "daily.prepare": "每日准备",
 }
 
 const JOB_STATUS_LABELS: Record<string, string> = {

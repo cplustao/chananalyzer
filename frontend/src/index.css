@@ -555,3 +555,4 @@
   .review-fact-grid { grid-template-columns: 1fr; }
   .radar-change-list > div, .industry-dynamics > div { align-items: flex-start; }
 }
+.nav-more-toggle{width:100%;display:flex;align-items:center;gap:4px;border:0;background:transparent;text-align:left;cursor:pointer}.nav-more-toggle:hover:not(:disabled){color:#8997aa}.nav-more-toggle:disabled{cursor:default}

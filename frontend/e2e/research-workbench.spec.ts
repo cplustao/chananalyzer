@@ -184,7 +184,13 @@ test("defaults to today's research workbench and exposes unified navigation", as
   await expect(page).toHaveURL(/\/today$/)
   await expect(page.getByRole("heading", { name: "今日研究" })).toBeVisible()
   if (!isMobile) {
-    for (const label of ["今日研究", "市场雷达", "个股分析", "自选股", "涨停分析", "新股分析", "缠论扫描", "市场筛选", "帮助中心", "设置"]) {
+    for (const label of ["今日研究", "市场雷达", "个股分析", "自选股", "缠论扫描", "市场筛选", "设置"]) {
+      await expect(page.getByRole("link", { name: label, exact: true })).toBeVisible()
+    }
+    // Low-frequency pages sit under a collapsed "更多" group.
+    await expect(page.getByRole("link", { name: "涨停分析", exact: true })).toHaveCount(0)
+    await page.getByRole("button", { name: "更多" }).click()
+    for (const label of ["涨停分析", "新股分析", "帮助中心"]) {
       await expect(page.getByRole("link", { name: label, exact: true })).toBeVisible()
     }
     await expect(page.getByRole("link", { name: "复盘与次日准备" })).toHaveCount(0)
@@ -234,6 +240,7 @@ test("mobile navigation is available as a drawer", async ({ page, isMobile }) =>
   test.skip(!isMobile, "mobile project only")
   await page.goto("/radar")
   await page.getByRole("button").filter({ has: page.locator("svg") }).first().click()
+  await page.getByRole("button", { name: "更多" }).last().click()
   await expect(page.getByRole("link", { name: "帮助中心" }).last()).toBeVisible()
 })
 test("watchlist management is part of the research workspace", async ({ page }) => {

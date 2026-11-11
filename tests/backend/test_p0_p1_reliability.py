@@ -664,3 +664,35 @@ def test_daily_health_excludes_inactive_and_not_yet_listed_instruments(session):
 
     assert health["status"] == "fresh"
     assert health["coverage_rate"] == 1.0
+
+
+def test_decision_logs_a_module_that_fails_instead_of_hiding_it(session, caplog):
+    service = DecisionService(session, get_settings(), "local-user")
+
+    def broken():
+        raise RuntimeError("radar table is locked")
+
+    with caplog.at_level("ERROR", logger="backend.app.services.decision"):
+        assert service._safe("market_radar", broken) is None
+
+    assert service.missing == ["market_radar"]
+    assert "decision module market_radar failed" in caplog.text
+    assert "radar table is locked" in caplog.text
+
+
+def test_attention_jobs_drop_failures_a_later_run_already_fixed(session):
+    from backend.app.db.models import Job
+
+    session.add_all([
+        Job(kind="data.refresh", status="partial", payload={}, created_at=datetime(2026, 11, 5, 10)),
+        Job(kind="data.refresh", status="completed", payload={}, created_at=datetime(2026, 11, 9, 10)),
+        Job(kind="market_radar.refresh", status="failed", payload={}, created_at=datetime(2026, 11, 9, 11)),
+        Job(kind="market_radar.refresh", status="completed", payload={}, created_at=datetime(2026, 11, 8, 11)),
+        Job(kind="daily.prepare", status="running", payload={}, created_at=datetime(2026, 11, 10, 10)),
+    ])
+    session.commit()
+
+    jobs = DecisionService(session, get_settings(), "local-user")._attention_jobs()
+
+    assert [(job["kind"], job["status"]) for job in jobs["failed"]] == [("market_radar.refresh", "failed")]
+    assert [job["kind"] for job in jobs["pending"]] == ["daily.prepare"]
