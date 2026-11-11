@@ -2230,6 +2230,48 @@
           }
         }
       }
+    },
+    "/api/v1/watchlists/default/items/{item_id}/plan-draft": {
+      "get": {
+        "tags": [
+          "watchlists"
+        ],
+        "summary": "Get Research Plan Draft",
+        "operationId": "get_research_plan_draft_api_v1_watchlists_default_items__item_id__plan_draft_get",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResearchPlanDraftView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3698,6 +3740,80 @@
         "additionalProperties": false,
         "type": "object",
         "title": "RefreshPayload"
+      },
+      "ResearchPlanDraftBasis": {
+        "properties": {
+          "structure_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Structure Date"
+          },
+          "algorithm_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Algorithm Version"
+          },
+          "history_sufficient": {
+            "type": "boolean",
+            "title": "History Sufficient"
+          },
+          "analysis_bar_count": {
+            "type": "integer",
+            "title": "Analysis Bar Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "structure_date",
+          "algorithm_version",
+          "history_sufficient",
+          "analysis_bar_count"
+        ],
+        "title": "ResearchPlanDraftBasis"
+      },
+      "ResearchPlanDraftView": {
+        "properties": {
+          "thesis": {
+            "type": "string",
+            "title": "Thesis"
+          },
+          "confirmation_trigger": {
+            "type": "string",
+            "title": "Confirmation Trigger"
+          },
+          "invalidation_condition": {
+            "type": "string",
+            "title": "Invalidation Condition"
+          },
+          "next_action": {
+            "type": "string",
+            "title": "Next Action"
+          },
+          "next_review_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Next Review Date"
+          },
+          "basis": {
+            "$ref": "#/components/schemas/ResearchPlanDraftBasis"
+          }
+        },
+        "type": "object",
+        "required": [
+          "thesis",
+          "confirmation_trigger",
+          "invalidation_condition",
+          "next_action",
+          "next_review_date",
+          "basis"
+        ],
+        "title": "ResearchPlanDraftView"
       },
       "ScanJobCreate": {
         "properties": {

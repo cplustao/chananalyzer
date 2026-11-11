@@ -149,6 +149,7 @@ async function mockApi(page: Page) {
       body = { instrument_id: instrumentId, algorithm_version: "chan-v1", calculated_at: "2026-07-28T09:00:00Z", analysis: { bi_list: [], seg_list: [], zs_list: [], buy_signals: [], sell_signals: [] } }
     } else if (path.endsWith("/analyses")) body = { items: [], total: 0, page: 1, page_size: 30 }
     else if (path.endsWith("/scans/history")) body = [{ id: "scan-job", kind: "scan.buy", status: "completed", progress: 100, result_count: 1, payload: { types: ["2"] }, created_at: "2026-07-28T09:00:00Z", finished_at: "2026-07-28T09:03:00Z" }]
+    else if (path.endsWith("/plan-draft")) body = { thesis: "2026-07-22 出现日线二类买点（20.10）", confirmation_trigger: "收盘向上突破中枢上沿 22.00", invalidation_condition: "收盘跌破买点价格 20.10", next_action: "2026-07-31 复盘：确认条件是否出现", next_review_date: "2026-07-31", basis: { structure_date: "2026-07-24", algorithm_version: "chan-v1", history_sufficient: true, analysis_bar_count: 500 } }
     else if (path.endsWith("/watchlists/default")) body = { id: "default", name: "默认自选", is_default: true, items: [{ id: "watch-1", instrument: { id: 1, code: "600519", name: "贵州茅台", status: "listed" }, position: 1, note: "等待日线三买确认", tags: ["核心观察"] }, { id: "watch-2", instrument: { id: 2, code: "000997", name: "新大陆", status: "listed" }, position: 2, note: null, tags: [] }] }
     else if (path.endsWith("/settings/schedules")) body = []
     else if (path.endsWith("/instruments")) body = { items: [], total: 0, page: 1, page_size: 50 }
@@ -244,6 +245,11 @@ test("watchlist management is part of the research workspace", async ({ page }) 
   await page.getByRole("button", { name: "编辑 600519 贵州茅台 的研究备注" }).dblclick()
   await expect(page.getByRole("heading", { name: "编辑自选研究信息" })).toBeVisible()
   await expect(page.getByPlaceholder("记录加入原因、等待确认、失效条件和下一步动作")).toBeFocused()
+  await page.keyboard.press("Escape")
+  await page.getByRole("row", { name: /000997/ }).getByRole("button", { name: "计划", exact: true }).click()
+  await expect(page.getByText(/结构草稿：按 2026-07-24 的日线结构/)).toBeVisible()
+  await expect(page.getByPlaceholder("为什么值得持续跟踪？")).toHaveValue("2026-07-22 出现日线二类买点（20.10）")
+  await expect(page.getByPlaceholder("什么变化意味着原逻辑不成立？")).toHaveValue("收盘跌破买点价格 20.10")
 })
 
 test("stock research switches through the integrated watchlist queue", async ({ page }) => {

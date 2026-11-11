@@ -4,10 +4,16 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import current_user
-from backend.app.api.schemas import WatchlistItemInput, WatchlistItemUpdate, WatchlistView
-from backend.app.db.models import User
+from backend.app.api.schemas import (
+    ResearchPlanDraftView,
+    WatchlistItemInput,
+    WatchlistItemUpdate,
+    WatchlistView,
+)
+from backend.app.db.models import User, WatchlistItem
 from backend.app.db.session import get_session
 from backend.app.repositories.watchlists import WatchlistRepository
+from backend.app.services.research_plan import ResearchPlanDraftService
 from backend.app.services.views import watchlist_view
 
 router = APIRouter(prefix="/watchlists", tags=["watchlists"])
@@ -36,8 +42,10 @@ def add_watchlist_item(
             next_review_date=payload.next_review_date,
             research_status=payload.research_status,
         )
-    except ValueError as exc:
+    except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return watchlist_view(item)
 
 
@@ -61,6 +69,22 @@ def update_watchlist_item(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return watchlist_view(watchlist)
+
+
+@router.get("/default/items/{item_id}/plan-draft", response_model=ResearchPlanDraftView)
+def get_research_plan_draft(
+    item_id: str,
+    session: Session = Depends(get_session),
+    user: User = Depends(current_user),
+) -> ResearchPlanDraftView:
+    watchlist = WatchlistRepository(session).get_default(user.id)
+    item = next((entry for entry in watchlist.items if entry.id == item_id), None)
+    if not isinstance(item, WatchlistItem):
+        raise HTTPException(status_code=404, detail="自选股记录不存在")
+    draft = ResearchPlanDraftService(session).build(item.instrument_id)
+    if draft is None:
+        raise HTTPException(status_code=404, detail="还没有这只股票的缠论结构，请先在个股页计算")
+    return ResearchPlanDraftView.model_validate(draft)
 
 
 @router.delete("/default/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)

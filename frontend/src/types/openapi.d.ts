@@ -790,6 +790,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/watchlists/default/items/{item_id}/plan-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Research Plan Draft */
+        get: operations["get_research_plan_draft_api_v1_watchlists_default_items__item_id__plan_draft_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1284,6 +1301,37 @@ export interface components {
             lookback_days?: number | null;
             /** Lookahead Days */
             lookahead_days?: number | null;
+        };
+        /** ResearchPlanDraftBasis */
+        ResearchPlanDraftBasis: {
+            /**
+             * Structure Date
+             * Format: date
+             */
+            structure_date: string;
+            /** Algorithm Version */
+            algorithm_version: string | null;
+            /** History Sufficient */
+            history_sufficient: boolean;
+            /** Analysis Bar Count */
+            analysis_bar_count: number;
+        };
+        /** ResearchPlanDraftView */
+        ResearchPlanDraftView: {
+            /** Thesis */
+            thesis: string;
+            /** Confirmation Trigger */
+            confirmation_trigger: string;
+            /** Invalidation Condition */
+            invalidation_condition: string;
+            /** Next Action */
+            next_action: string;
+            /**
+             * Next Review Date
+             * Format: date
+             */
+            next_review_date: string;
+            basis: components["schemas"]["ResearchPlanDraftBasis"];
         };
         /** ScanJobCreate */
         ScanJobCreate: {
@@ -3080,6 +3128,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_research_plan_draft_api_v1_watchlists_default_items__item_id__plan_draft_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchPlanDraftView"];
+                };
             };
             /** @description Validation Error */
             422: {

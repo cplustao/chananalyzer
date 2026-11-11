@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
-import { Search, Star, Trash2, TrendingUp } from "lucide-react"
+import { NotebookPen, Search, Star, Trash2, TrendingUp } from "lucide-react"
 import { EmptyPanel, ErrorPanel, LoadingPanel, PageHeader } from "@/components/common"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -10,10 +10,10 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { api, put } from "@/lib/api"
-import type { Watchlist, WatchlistItem } from "@/types/api"
+import type { ResearchPlanDraft, Watchlist, WatchlistItem } from "@/types/api"
 import "./WatchlistPage.css"
 
-type EditableField = "tags" | "note"
+type EditableField = "tags" | "note" | "plan"
 type EditingTarget = { item: WatchlistItem; field: EditableField } | null
 const researchStatusLabels: Record<string, string> = { pending: "待验证", watching: "观察中", confirmed: "已确认", invalidated: "已失效" }
 
@@ -125,6 +125,7 @@ export function WatchlistPage() {
                     </td>
                     <td>
                       <div className="row-actions">
+                        <Button variant="ghost" size="sm" onClick={() => startEditing(item, "plan")}><NotebookPen />计划</Button>
                         <Button variant="ghost" size="sm" asChild><Link to={`/stocks?id=${item.instrument.id}`}><TrendingUp />研究</Link></Button>
                         <Button variant="ghost" size="sm" className="danger-action" onClick={() => remove.mutate(item.id)} disabled={remove.isPending}><Trash2 />移除</Button>
                       </div>
@@ -145,14 +146,33 @@ function WatchlistEditor({ target, onClose }: { target: EditingTarget; onClose: 
   const item = target?.item ?? null
   const [draft, setDraft] = useState({ id: "", note: "", tags: "", thesis: "", confirmation: "", invalidation: "", action: "", reviewDate: "", status: "watching" })
   const client = useQueryClient()
+  const planDraft = useQuery({
+    queryKey: ["watchlist-plan-draft", item?.id],
+    queryFn: () => api<ResearchPlanDraft>(`/watchlists/default/items/${item?.id}/plan-draft`),
+    enabled: Boolean(item),
+    retry: false,
+    staleTime: 60_000,
+  })
+  const planEmpty = Boolean(item) && ![item?.thesis, item?.confirmation_trigger, item?.invalidation_condition, item?.next_action, item?.next_review_date].some(Boolean)
+  const saved = {
+    id: item?.id ?? "", note: item?.note ?? "", tags: tagsText(item?.tags ?? []),
+    thesis: item?.thesis ?? "", confirmation: item?.confirmation_trigger ?? "",
+    invalidation: item?.invalidation_condition ?? "", action: item?.next_action ?? "",
+    reviewDate: item?.next_review_date ?? "", status: item?.research_status ?? "watching",
+  }
+  const fillBlanks = (base: typeof draft, source: ResearchPlanDraft): typeof draft => ({
+    ...base,
+    thesis: base.thesis || source.thesis,
+    confirmation: base.confirmation || source.confirmation_trigger,
+    invalidation: base.invalidation || source.invalidation_condition,
+    action: base.action || source.next_action,
+    reviewDate: base.reviewDate || source.next_review_date,
+  })
   const activeDraft = item?.id === draft.id
     ? draft
-    : {
-        id: item?.id ?? "", note: item?.note ?? "", tags: tagsText(item?.tags ?? []),
-        thesis: item?.thesis ?? "", confirmation: item?.confirmation_trigger ?? "",
-        invalidation: item?.invalidation_condition ?? "", action: item?.next_action ?? "",
-        reviewDate: item?.next_review_date ?? "", status: item?.research_status ?? "watching",
-      }
+    : planEmpty && planDraft.data ? fillBlanks(saved, planDraft.data) : saved
+  // Once the user edits, the draft text is theirs; the button can still fill fields left blank.
+  const showsDraft = Boolean(planDraft.data) && planEmpty && item?.id !== draft.id
   const save = useMutation({
     mutationFn: () => put<Watchlist>(`/watchlists/default/items/${item?.id}`, {
       note: activeDraft.note.trim() || null,
@@ -180,6 +200,17 @@ function WatchlistEditor({ target, onClose }: { target: EditingTarget; onClose: 
         {item ? (
           <div className="editor-form">
             <div className="selected-stock"><strong>{item.instrument.code} {item.instrument.name}</strong><span>{item.instrument.industry ?? "—"}</span></div>
+            {planDraft.data ? (
+              <div className="plan-draft-note" role="note">
+                <p>
+                  结构草稿：按 {planDraft.data.basis.structure_date} 的日线结构（{planDraft.data.basis.analysis_bar_count} 根 K 线）生成。
+                  {showsDraft ? "已填入下方空白项，" : ""}请改成你自己的判断后保存；不保存不会写入。
+                </p>
+                {!planDraft.data.basis.history_sufficient ? <p className="plan-draft-warning">K 线不足，结构可能不完整。</p> : null}
+                {!showsDraft ? <Button variant="outline" size="sm" onClick={() => setDraft(fillBlanks(activeDraft, planDraft.data!))}>用草稿填空白项</Button> : null}
+              </div>
+            ) : planDraft.isLoading ? <p className="muted">正在按当前 K 线生成结构草稿…</p>
+              : planDraft.error ? <p className="muted">暂无结构草稿：{planDraft.error.message}</p> : null}
             <label>
               <span>研究标签</span>
               <Input
@@ -195,7 +226,7 @@ function WatchlistEditor({ target, onClose }: { target: EditingTarget; onClose: 
             </label>
             <label>
               <span>投资逻辑</span>
-              <Textarea value={activeDraft.thesis} onChange={(event) => updateDraft("thesis", event.target.value)} placeholder="为什么值得持续跟踪？" rows={3} />
+              <Textarea autoFocus={target?.field === "plan"} value={activeDraft.thesis} onChange={(event) => updateDraft("thesis", event.target.value)} placeholder="为什么值得持续跟踪？" rows={3} />
             </label>
             <label>
               <span>确认条件</span>
