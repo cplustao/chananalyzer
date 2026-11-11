@@ -83,7 +83,7 @@ class Bar(Base):
     raw_amount: Mapped[float | None] = mapped_column(Float)
     turnover_rate: Mapped[float | None] = mapped_column(Float)
     data_source_id: Mapped[int | None] = mapped_column(ForeignKey("data_sources.id", ondelete="SET NULL"))
-    quality_status: Mapped[str] = mapped_column(String(24), default="ok")
+    quality_status: Mapped[str] = mapped_column(String(24), default="ok", index=True)
     trade_status: Mapped[str] = mapped_column(String(24), default="trading", index=True)
     unit_contract_version: Mapped[str] = mapped_column(String(32), default="cn-equity-v1", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

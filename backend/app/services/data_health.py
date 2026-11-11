@@ -27,6 +27,7 @@ from backend.app.services.secrets import SecretService
 _STATE_RANK = {"fresh": 0, "partial": 1, "stale": 2, "missing": 3}
 ANALYSIS_SERIES_KEY = "analysis_series"
 ANALYSIS_SERIES_MIN_COVERAGE = 0.95
+UNIT_CONTRACT = "cn-equity-v1"
 
 
 def expected_trade_date(session: Session, now: datetime | None = None) -> date | None:
@@ -73,17 +74,21 @@ class DataHealthService:
             item for item in categories
             if item["affects_overall"] and item["status"] != "fresh"
         ]
-        unit_anomalies = int(
+        # Two indexed counts instead of one OR, which made SQLite scan every bar (about 50 s).
+        # The range form keeps "not the current contract" on the index.
+        other_contract = int(
             self.session.scalar(
                 select(func.count()).select_from(Bar).where(
-                    or_(
-                        Bar.unit_contract_version != "cn-equity-v1",
-                        Bar.quality_status == "quarantined",
-                    )
+                    or_(Bar.unit_contract_version < UNIT_CONTRACT, Bar.unit_contract_version > UNIT_CONTRACT)
                 )
             )
             or 0
         )
+        quarantined = int(
+            self.session.scalar(select(func.count()).select_from(Bar).where(Bar.quality_status == "quarantined"))
+            or 0
+        )
+        unit_anomalies = other_contract + quarantined
         if unit_anomalies:
             overall = "stale"
         eligible_count = next(
