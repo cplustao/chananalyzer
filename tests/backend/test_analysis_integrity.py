@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from math import sin
 
+from backend.app.chan_core.engine import ALGORITHM_VERSION as CHAN_ALGORITHM_VERSION
 from backend.app.core.config import get_settings
 from backend.app.db.models import AnalysisRun, Instrument, Job
 from backend.app.providers.market_data import MarketBar
@@ -172,12 +173,25 @@ def test_structure_is_current_when_computed_from_the_latest_full_series(client, 
     save(session, instrument, bars)
     add_run(session, instrument, structure_snapshot={
         "bi_list": [], "end_date": bars[-1].bar_time.strftime("%Y/%m/%d"), "analysis_bar_count": len(bars),
+        "algorithm_version": CHAN_ALGORITHM_VERSION,
     })
 
     body = structure(client, instrument)
 
     assert body["is_stale"] is False
     assert body["available_bar_count"] == len(bars)
+
+
+def test_structure_from_an_older_engine_version_is_recomputed(client, session):
+    instrument = stock(session, "600001")
+    bars = wave_bars(MIN_ANALYSIS_BARS)
+    save(session, instrument, bars)
+    add_run(session, instrument, structure_snapshot={
+        "bi_list": [], "end_date": bars[-1].bar_time.strftime("%Y/%m/%d"), "analysis_bar_count": len(bars),
+        "algorithm_version": "chan-core-v2-memory-1",
+    })
+
+    assert structure(client, instrument)["is_stale"] is True
 
 
 def test_structure_goes_stale_when_newer_bars_arrive(client, session):
