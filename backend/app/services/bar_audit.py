@@ -12,8 +12,13 @@ from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
+
+from backend.app.db.models import Bar, Instrument, TradingCalendar
+from backend.app.providers.market_data import MarketBar
+from backend.app.repositories.ingestion import IngestionRepository
+from backend.app.services.bar_access import preferred_adjustment
 
 FIRST_SESSIONS_WITHOUT_LIMIT = 5
 # Allowed gap between the stored move and the other source's move on the same day.
@@ -100,3 +105,66 @@ def confirm_with_other_source(jumps: Iterable[Jump], fetch_closes: CloseFetcher)
             if abs(other - jump.change_pct) > VERIFY_TOLERANCE_POINTS:
                 broken.append(Jump(jump.instrument_id, jump.code, jump.name, jump.day, jump.change_pct, round(other, 2)))
     return broken
+
+
+DateFetcher = Callable[[str, date, date], set[date]]
+
+
+def series_gaps(session: Session, instrument: Instrument, *, end: date) -> list[date]:
+    """Open sessions between the first and last saved bar that have no bar in the series."""
+    adjustment = preferred_adjustment(instrument.exchange)
+    rows = session.execute(
+        select(Bar.bar_time, Bar.data_source_id)
+        .where(Bar.instrument_id == instrument.id, Bar.timeframe == "DAY", Bar.adjustment == adjustment,
+               Bar.quality_status == "ok", Bar.bar_time <= datetime.combine(end, datetime.max.time()))
+        .order_by(Bar.bar_time)
+    ).all()
+    if not rows:
+        return []
+    source_id = rows[-1].data_source_id
+    saved = {row.bar_time.date() for row in rows if row.data_source_id == source_id}
+    first = min(saved)
+    last = max(saved)
+    open_days = session.scalars(
+        select(TradingCalendar.trade_date).where(
+            TradingCalendar.is_open.is_(True), TradingCalendar.trade_date > first, TradingCalendar.trade_date < last
+        )
+    ).all()
+    return sorted(day for day in open_days if day not in saved)
+
+
+def fill_confirmed_suspensions(
+    session: Session, instrument: Instrument, gaps: list[date], other_source_dates: set[date]
+) -> list[date]:
+    """Write suspension bars for gap days the other source also has no trading on.
+
+    The bars follow BaoStock's own convention for suspended days: flat at the
+    previous close with zero volume, so the Chan engine skips them and the
+    refresh stops asking for days that never traded. They carry the series'
+    source id because research reads one source per series.
+    """
+    confirmed = [day for day in gaps if day not in other_source_dates]
+    if not confirmed:
+        return []
+    adjustment = preferred_adjustment(instrument.exchange)
+    rows = session.execute(
+        select(Bar.bar_time, Bar.close, Bar.data_source_id)
+        .where(Bar.instrument_id == instrument.id, Bar.timeframe == "DAY", Bar.adjustment == adjustment,
+               Bar.quality_status == "ok")
+        .order_by(Bar.bar_time)
+    ).all()
+    source_id = rows[-1].data_source_id
+    closes = [(row.bar_time.date(), row.close) for row in rows if row.data_source_id == source_id]
+    markers: list[MarketBar] = []
+    for day in confirmed:
+        previous = [close for saved_day, close in closes if saved_day < day]
+        if not previous:
+            continue
+        price = previous[-1]
+        markers.append(MarketBar(datetime.combine(day, datetime.min.time()), price, price, price, price, 0.0, 0.0))
+    if markers:
+        IngestionRepository(session).upsert_bars(
+            instrument_id=instrument.id, timeframe="DAY", adjustment=adjustment,
+            data_source_id=source_id, bars=markers,
+        )
+    return [marker.bar_time.date() for marker in markers]
