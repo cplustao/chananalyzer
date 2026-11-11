@@ -123,7 +123,7 @@ class DatabaseChanEngine:
 
     def _bars_with_adjustment(self, instrument_id: int) -> tuple[list[ChanBar], str]:
         rows, adjustment = load_daily_bars(
-            self.session, instrument_id, start=analysis_window_start(), quality_only=True
+            self.session, instrument_id, start=analysis_window_start(), quality_only=True, traded_only=True
         )
         bars = [
             ChanBar(

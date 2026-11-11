@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
-from backend.app.db.models import Bar, DataSource, Industry, Instrument, TradingCalendar
+from backend.app.db.models import Bar, DataSource, Industry, IngestionRun, Instrument, Job, TradingCalendar
 from backend.app.db.models.common import utcnow
 from backend.app.providers.market_data import CalendarSession, InstrumentRecord, MarketBar
 
@@ -17,6 +17,26 @@ from backend.app.providers.market_data import CalendarSession, InstrumentRecord,
 class IngestionRepository:
     def __init__(self, session: Session):
         self.session = session
+
+    def close_abandoned_runs(self, *, live_job_since: datetime) -> int:
+        """Close ingestion runs left "running" by a worker that stopped mid-run.
+
+        A run only advances inside a running job. When no job has a heartbeat
+        after ``live_job_since``, nothing can still be writing these runs.
+        """
+
+        live = self.session.scalar(
+            select(func.count()).select_from(Job).where(Job.status == "running", Job.heartbeat_at >= live_job_since)
+        )
+        if live:
+            return 0
+        runs = self.session.scalars(select(IngestionRun).where(IngestionRun.status == "running")).all()
+        for run in runs:
+            run.status = "interrupted"
+            run.finished_at = utcnow()
+            run.error = run.error or "Worker stopped before this run finished; the next refresh resumes from saved bars."
+        self.session.commit()
+        return len(runs)
 
     def data_source(self, key: str, name: str, capabilities: dict[str, Any] | None = None) -> DataSource:
         source = self.session.scalar(select(DataSource).where(DataSource.key == key))

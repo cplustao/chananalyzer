@@ -35,6 +35,17 @@ def preferred_bar_condition(bar: Any = Bar):
     )
 
 
+def traded_bar_condition(bar: Any = Bar):
+    """Exclude suspension days.
+
+    BaoStock keeps a flat, zero-volume bar for each day a stock is suspended;
+    other sources omit the day. Those bars are not trading, and a long
+    suspension would otherwise insert a run of flat K-lines into the structure.
+    """
+
+    return or_(bar.volume.is_(None), bar.volume > 0)
+
+
 def analysis_window_start(today: date | None = None) -> datetime:
     return datetime.combine((today or date.today()) - timedelta(days=ANALYSIS_WINDOW_DAYS), time.min)
 
@@ -57,6 +68,7 @@ def analysis_series_summary(session: Session, instrument_id: int) -> tuple[int, 
             *conditions,
             Bar.data_source_id == source_id,
             Bar.bar_time >= analysis_window_start(),
+            traded_bar_condition(),
         )
     ).one()
     return int(count or 0), latest.date() if latest else None
@@ -119,6 +131,7 @@ def analysis_series_coverage(session: Session, *, today: date | None = None) -> 
             Bar.quality_status == "ok",
             Bar.bar_time >= analysis_window_start(current),
             preferred_bar_condition(),
+            traded_bar_condition(),
         )
         .group_by(Bar.instrument_id)
         .having(func.count(Bar.id) >= MIN_ANALYSIS_BARS)
@@ -143,6 +156,7 @@ def load_daily_bars(
     limit: int | None = None,
     descending: bool = False,
     quality_only: bool = True,
+    traded_only: bool = False,
 ) -> tuple[list[Bar], str]:
     exchange = session.scalar(select(Instrument.exchange).where(Instrument.id == instrument_id))
     adjustment = preferred_adjustment(exchange)
@@ -167,6 +181,8 @@ def load_daily_bars(
     conditions = [*source_conditions, Bar.data_source_id == source_id]
     if start is not None:
         conditions.append(Bar.bar_time >= start)
+    if traded_only:
+        conditions.append(traded_bar_condition())
     statement = select(Bar).where(*conditions).order_by(
         Bar.bar_time.desc() if descending else Bar.bar_time
     )
