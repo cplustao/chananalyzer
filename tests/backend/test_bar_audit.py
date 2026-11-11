@@ -101,3 +101,12 @@ def test_gaps_the_other_source_also_lacks_become_suspension_bars(session):
     assert series_gaps(session, instrument, end=days[-1]) == [days[6]]
     # Suspension bars are not analysis input.
     assert analysis_series_summary(session, instrument.id)[0] == 7
+
+
+def test_known_source_errors_cover_the_bad_bar_and_the_rebound_after_it():
+    from backend.app.services.bar_audit import Jump, is_known_source_error
+
+    assert is_known_source_error(Jump(1, "000981", "", date(2022, 2, 25), -42.9))
+    assert is_known_source_error(Jump(1, "000981", "", date(2022, 2, 28), 58.3))
+    assert not is_known_source_error(Jump(1, "000981", "", date(2026, 2, 25), -42.9))
+    assert not is_known_source_error(Jump(2, "688501", "", date(2022, 2, 25), -27.1))
