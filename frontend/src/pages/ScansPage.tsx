@@ -327,7 +327,7 @@ export function ScansPage({ screener = false }: { screener?: boolean }) {
             aria-pressed={excludeSt}
             onClick={() => setExcludeSt((value) => !value)}
           >
-            <SlidersHorizontal />{excludeSt ? "已排除 ST" : "包含 ST"}
+            <SlidersHorizontal />{excludeSt ? "已排除 ST 和退市整理股" : "包含 ST 和退市整理股"}
           </Button>
         ) : null}
         <div className="scan-submit-row">

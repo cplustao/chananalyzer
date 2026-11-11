@@ -147,7 +147,8 @@ class DatabaseChanEngine:
         areas: list[str] | None,
         exclude_st: bool,
     ) -> bool:
-        if exclude_st and "ST" in (instrument.name or "").upper():
+        # Stocks in a delisting period carry "退" in their name; like ST, they are not research candidates.
+        if exclude_st and ("ST" in (instrument.name or "").upper() or "退" in (instrument.name or "")):
             return False
         if industries and (instrument.industry is None or instrument.industry.name not in industries):
             return False
