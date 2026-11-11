@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
@@ -18,6 +19,8 @@ from backend.app.services.data_health import DataHealthService
 from backend.app.services.scan_changes import SCAN_KINDS, ScanChangeService
 from backend.app.services.schedules import DAILY_PREPARE_SCHEDULE_KEY, TIMEZONE, schedule_view
 from backend.app.services.today_candidates import TodayCandidateService
+
+logger = logging.getLogger(__name__)
 
 
 class DecisionService:
@@ -66,6 +69,8 @@ class DecisionService:
         try:
             return callback()
         except Exception:
+            # The page still renders without this module, so it is logged rather than raised.
+            logger.exception("decision module %s failed; it is reported as missing", key)
             self.session.rollback()
             self.missing.append(key)
             return None
@@ -339,12 +344,23 @@ class DecisionService:
         }
 
     def _attention_jobs(self) -> dict[str, Any]:
-        failed = self.session.scalars(
-            select(Job)
-            .where(Job.status.in_(("partial", "failed")), Job.archived_at.is_(None))
-            .order_by(Job.created_at.desc())
-            .limit(8)
-        ).all()
+        # A failure is only worth attention until a later run of the same kind completes;
+        # older ones stay in the task center.
+        last_completed = dict(
+            self.session.execute(
+                select(Job.kind, func.max(Job.created_at)).where(Job.status == "completed").group_by(Job.kind)
+            ).all()
+        )
+        failed = [
+            job
+            for job in self.session.scalars(
+                select(Job)
+                .where(Job.status.in_(("partial", "failed")), Job.archived_at.is_(None))
+                .order_by(Job.created_at.desc())
+                .limit(50)
+            )
+            if not (last_completed.get(job.kind) and last_completed[job.kind] > job.created_at)
+        ][:8]
         pending = self.session.scalars(
             select(Job)
             .where(Job.status.in_(("queued", "running")), Job.archived_at.is_(None))

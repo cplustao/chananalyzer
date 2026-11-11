@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useDailyPrepare } from "@/hooks/useDailyPrepare"
 import { api, post } from "@/lib/api"
+import { jobKindLabel, jobStatusLabel } from "@/lib/labels"
+import { beijingToday } from "@/lib/research-date"
 import type { AutomationStatus, DecisionToday, TodayCandidates, Watchlist } from "@/types/api"
 import "./TodayPage.css"
 
@@ -95,6 +97,9 @@ function formatPercent(value: number | null | undefined) {
   return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`
 }
 
+// Status-only messages add nothing next to the status label.
+const genericJobMessages = new Set(["任务完成", "任务失败", "部分完成", "任务已取消"])
+
 const statusLabels: Record<string, string> = {
   pending: "待验证",
   watching: "观察中",
@@ -137,11 +142,14 @@ export function TodayPage() {
     const coverage = scan.coverage_rate === null || scan.coverage_rate === undefined ? "—" : `${(scan.coverage_rate * 100).toFixed(1)}%`
     return `${scanKindLabels[scan.kind] ?? scan.kind}${scan.status === "partial" ? "（部分完成）" : ""} 覆盖 ${coverage}`
   })
-  const today = new Date().toISOString().slice(0, 10)
+  const today = beijingToday()
   const dueReviews = (watchlist.data?.items ?? []).filter(
     (item) => item.research_status !== "invalidated" && item.next_review_date && item.next_review_date <= today,
   )
   const blocking = health?.blocking_reasons ?? data.review_context.blocking_modules
+  const gateCategories = (health?.categories ?? []).filter((item) => item.affects_overall)
+  const failedJobs = data.attention_jobs?.failed ?? []
+  const activeJobs = data.attention_jobs?.pending ?? []
 
   return (
     <div className="page-stack today-page">
@@ -184,15 +192,15 @@ export function TodayPage() {
           <h2>{data.review_context.title}</h2>
           <p>{data.review_context.message}</p>
           <div className="today-evidence">
-            <div><strong>支持证据</strong>{(data.market_radar?.snapshot.evidence ?? []).slice(0, 3).map((item, index) => <p key={index}>• {String(item)}</p>)}</div>
-            <div><strong>风险反证</strong>{(data.market_radar?.snapshot.counter_evidence ?? []).slice(0, 3).map((item, index) => <p key={index}>• {String(item)}</p>)}</div>
+            <div><strong>支持证据</strong>{(data.market_radar?.snapshot.evidence ?? []).length ? (data.market_radar?.snapshot.evidence ?? []).slice(0, 3).map((item, index) => <p key={index}>• {String(item)}</p>) : <p className="muted">暂无支持证据。</p>}</div>
+            <div><strong>风险反证</strong>{(data.market_radar?.snapshot.counter_evidence ?? []).length ? (data.market_radar?.snapshot.counter_evidence ?? []).slice(0, 3).map((item, index) => <p key={index}>• {String(item)}</p>) : <p className="muted">雷达没有列出反证，不代表没有风险。</p>}</div>
           </div>
         </article>
 
         <article className="panel">
-          <div className="panel-title"><span><Database />首次准备与数据状态</span><Badge>{health?.categories.filter((item) => item.status === "fresh").length ?? 0}/{health?.categories.length ?? 0}</Badge></div>
+          <div className="panel-title"><span><Database />{data.automation?.last_success ? "数据状态" : "首次准备与数据状态"}</span><Badge>{gateCategories.filter((item) => item.status === "fresh").length}/{gateCategories.length}</Badge></div>
           <div className="readiness-list">
-            {(health?.categories ?? []).filter((item) => item.affects_overall).map((item) => (
+            {gateCategories.map((item) => (
               <div key={item.key}><span>{item.status === "fresh" ? <CheckCircle2 /> : <Clock3 />}<strong>{moduleLabels[item.key] ?? item.key}</strong></span><Badge variant="outline" className={`status-${item.status}`}>{item.status === "fresh" ? "就绪" : "待处理"}</Badge></div>
             ))}
           </div>
@@ -227,8 +235,9 @@ export function TodayPage() {
           {dueReviews.length ? <div className="review-list">{dueReviews.slice(0, 6).map((item) => <Link key={item.id} to={`/stocks?id=${item.instrument.id}`}><span><strong>{item.instrument.code} {item.instrument.name}</strong><small>{item.next_action || "核对投资逻辑与失效条件"}</small></span><Badge variant="outline">{statusLabels[item.research_status] ?? item.research_status}</Badge></Link>)}</div> : <p className="muted">今天没有到期的自选复盘事项。</p>}
         </article>
         <article className="panel">
-          <div className="panel-title"><span>任务与异常</span><Badge>{(data.attention_jobs?.failed.length ?? 0) + (data.attention_jobs?.pending.length ?? 0)}</Badge></div>
-          {data.attention_jobs?.failed.length ? data.attention_jobs.failed.slice(0, 4).map((job) => <p key={job.id} className="error-text">{job.kind}：{job.message ?? "执行失败"}</p>) : <p className="muted">没有需要立即处理的失败任务。</p>}
+          <div className="panel-title"><span>任务与异常</span><Badge>{failedJobs.length}</Badge></div>
+          {failedJobs.length ? failedJobs.slice(0, 4).map((job) => <p key={job.id} className="error-text">{jobKindLabel(job.kind)}（{jobStatusLabel(job.status)}）{job.message && !genericJobMessages.has(job.message) ? `：${job.message}` : ""}</p>) : <p className="muted">没有需要立即处理的失败任务。</p>}
+          {activeJobs.length ? <p className="muted">另有 {activeJobs.length} 个任务排队或运行中：{activeJobs.slice(0, 3).map((job) => jobKindLabel(job.kind)).join("、")}</p> : null}
         </article>
       </section>
     </div>
