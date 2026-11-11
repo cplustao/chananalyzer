@@ -222,7 +222,7 @@ const SCHEDULE_DESCRIPTIONS: Record<AutomationSchedule["job_kind"], string> = {
   "limit_up.refresh": "同步当日涨停原始事件，供市场雷达计算使用",
   "ipo.refresh": "同步过去一年及未来 90 天已公布上市日期的新股记录",
   "screen.hot": "先取涨幅榜前 200 名，再扫描二买和三买信号",
-  "screen.smart": "全市场排除 ST，扫描二买和三买信号",
+  "screen.smart": "全市场排除 ST 和退市整理股，扫描二买和三买信号",
   "market_radar.refresh": "基于最新交易数据生成雷达快照",
 }
 

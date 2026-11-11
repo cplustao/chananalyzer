@@ -141,6 +141,17 @@ python -m backend.app.signal_outcomes_cli --json   # 原始数据
 
 入场为扫描数据截止日收盘，不用信号日，避免用到当时还不存在的 K 线。样本少于 30 个或入场日少于 5 天时只显示数量。报告未计交易成本、涨停买不进和幸存者偏差，只用于检验工具本身，不构成投资建议。
 
+## 行情序列审计
+
+查找超过涨跌停幅度的单日变动（上市头几天和退市整理股除外），再用 AKShare（东方财富）核对同一天的涨跌幅。两边相差超过 2 个百分点，就判定本地序列有问题，常见原因是除权后的前复权历史没有重算，或者个别 K 线写错了：
+
+```bash
+python -m backend.app.bar_audit_cli            # 只报告
+python -m backend.app.bar_audit_cli --repair   # 把确认有问题的序列标记为过期，并排队一次 data.refresh 重新下载
+```
+
+AKShare 不可用时，可疑项一律不算“确认有问题”，也就不会被修复。
+
 ## PostgreSQL 外部备份
 
 应用内备份接口对 PostgreSQL 返回 `external_required`。推荐在数据库主机使用官方工具，并让备份文件进入独立、加密的存储：

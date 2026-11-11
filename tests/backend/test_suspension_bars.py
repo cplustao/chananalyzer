@@ -68,3 +68,16 @@ def test_worker_start_closes_ingestion_runs_left_running_by_a_stopped_worker(ses
     session.refresh(stale)
     assert stale.status == "interrupted"
     assert stale.finished_at is not None
+
+
+def test_delisting_period_stocks_are_excluded_with_st(session):
+    from backend.app.db.models import Instrument as Stock
+
+    delisting = Stock(code="002731", ts_code="002731.SZ", exchange="SZSE", name="萃华退", status="active")
+    st = Stock(code="002717", ts_code="002717.SZ", exchange="SZSE", name="*ST岭南", status="active")
+    normal = Stock(code="000001", ts_code="000001.SZ", exchange="SZSE", name="平安银行", status="active")
+
+    assert not DatabaseChanEngine._eligible(delisting, None, None, True)
+    assert not DatabaseChanEngine._eligible(st, None, None, True)
+    assert DatabaseChanEngine._eligible(normal, None, None, True)
+    assert DatabaseChanEngine._eligible(delisting, None, None, False)
