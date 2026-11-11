@@ -15,6 +15,7 @@ from backend.app.api.schemas import (
     InstrumentView,
     JobAccepted,
 )
+from backend.app.chan_core.engine import ALGORITHM_VERSION as CHAN_ALGORITHM_VERSION
 from backend.app.db.models import AnalysisRun, User
 from backend.app.db.session import get_session
 from backend.app.repositories.instruments import InstrumentRepository
@@ -134,9 +135,11 @@ def _chart_structure(run: AnalysisRun | None) -> dict | None:
 
 
 def _structure_is_stale(analysis: dict | None, bar_count: int, latest_bar: date | None) -> bool:
-    """True when the saved structure was computed from less data than is now available."""
+    """True when the saved structure was computed from less data, or by an older engine, than is current."""
     if analysis is None or latest_bar is None:
         return False
+    if analysis.get("algorithm_version") != CHAN_ALGORITHM_VERSION:
+        return True
     computed_through = str(analysis.get("end_date") or "").replace("/", "-")[:10]
     if computed_through < latest_bar.isoformat():
         return True

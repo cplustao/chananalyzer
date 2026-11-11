@@ -13,7 +13,9 @@ from backend.app.chan_core.vendor.Common.CEnum import AUTYPE, DATA_FIELD, KL_TYP
 from backend.app.chan_core.vendor.Common.CTime import CTime
 from backend.app.chan_core.vendor.KLine.KLine_Unit import CKLine_Unit
 
-ALGORITHM_VERSION = "chan-core-v2-memory-1"
+# Bump whenever the same bars can give different structures, including input rules.
+# memory-2 (2026-11-11): suspension days (zero-volume bars) are no longer engine input.
+ALGORITHM_VERSION = "chan-core-v2-memory-2"
 
 DEFAULT_CHAN_CONFIG: dict[str, Any] = {
     "bi_strict": True,

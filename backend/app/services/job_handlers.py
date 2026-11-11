@@ -10,6 +10,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from backend.app.chan_core import ChanEngine, ScanBatchOutcome, ScanSubjectOutcome
+from backend.app.chan_core.engine import ALGORITHM_VERSION as CHAN_ALGORITHM_VERSION
 from backend.app.core.config import get_settings
 from backend.app.core.errors import sanitize_text
 from backend.app.db.models import (
@@ -533,7 +534,7 @@ class JobHandlers:
             "coverage_rate": (len(outcome.subjects) - len(errors)) / max(1, len(outcome.subjects)),
             "errors": errors,
             "scan_kind": job.kind,
-            "algorithm_version": "chan-core-v2-memory-1",
+            "algorithm_version": getattr(self.chan_engine, "algorithm_version", CHAN_ALGORITHM_VERSION),
             **data_context,
         }
         if errors:
@@ -906,7 +907,7 @@ class JobHandlers:
         instrument = self.session.scalar(select(Instrument).where(Instrument.code == code))
         if instrument is None:
             raise ValueError(f"股票 {code} 不存在")
-        algorithm_version = getattr(self.chan_engine, "algorithm_version", "chan-core-v2-memory-1")
+        algorithm_version = getattr(self.chan_engine, "algorithm_version", CHAN_ALGORITHM_VERSION)
         reports: tuple[GeneratedReport, GeneratedReport, GeneratedReport] | None = None
         persisted_snapshot = analysis
         partial = False

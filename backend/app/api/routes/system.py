@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.app import __version__
 from backend.app.api.deps import current_user, settings_dep
 from backend.app.api.schemas import Catalog, DataHealthView, SystemStatus
+from backend.app.chan_core.engine import ALGORITHM_VERSION as CHAN_ALGORITHM_VERSION
 from backend.app.core.config import Settings
 from backend.app.db.models import (
     AnalysisRun,
@@ -75,7 +76,7 @@ def catalog(_user: User = Depends(current_user)) -> Catalog:
         sell_signal_types=["1", "1p", "2", "2s", "3a", "3b"],
         analysis_kinds=["stock", "limit_up", "ipo", "market_radar"],
         algorithm_versions={
-            "chan_core": "chan-core-v2-memory-1",
+            "chan_core": CHAN_ALGORITHM_VERSION,
             "market_radar": "2.1",
             "limit_up": "limit-up-v2.0",
             "ipo": "ipo-v2.0",

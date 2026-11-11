@@ -10,6 +10,7 @@ from backend.app.core.errors import AppError
 from backend.app.db.models import Instrument, Job, ScanResult
 
 SCAN_KINDS = ("scan.buy", "scan.sell", "screen.hot", "screen.smart")
+# Scans saved before results recorded their version were all computed by this one.
 SCAN_ALGORITHM_VERSION = "chan-core-v2-memory-1"
 
 
