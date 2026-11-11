@@ -55,6 +55,11 @@ def run() -> None:
                     recovered = JobRepository(session, worker_instance_id).recover_stale()
                     if recovered:
                         logger.info("Recovered %s stale jobs", recovered)
+                    closed = IngestionRepository(session).close_abandoned_runs(
+                        live_job_since=utcnow() - timedelta(minutes=5)
+                    )
+                    if closed:
+                        logger.info("Closed %s ingestion runs abandoned by a stopped worker", closed)
                     enqueued = enqueue_due_schedules(session, settings.worker_max_attempts)
                     if enqueued:
                         logger.info("Enqueued %s scheduled jobs", enqueued)
