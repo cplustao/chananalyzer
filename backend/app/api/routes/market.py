@@ -10,45 +10,10 @@ from backend.app.api.deps import current_user, settings_dep
 from backend.app.core.config import Settings
 from backend.app.db.models import RadarSnapshot, User
 from backend.app.db.session import get_session
-from backend.app.domain.market_positions import build_executable_positions, risk_inputs_from_snapshot
 from backend.app.services.data_health import DataHealthService
+from backend.app.services.radar_positions import version_history
 
 router = APIRouter(prefix="/market", tags=["market"])
-
-
-def _dedupe_rows(rows: list[RadarSnapshot]) -> list[RadarSnapshot]:
-    """Defensively keep the latest calculation for each trade date."""
-    by_date: dict[object, RadarSnapshot] = {}
-    for row in sorted(rows, key=lambda item: (item.trade_date, item.calculated_at)):
-        by_date[row.trade_date] = row
-    return list(by_date.values())
-
-
-def _history_payload(rows: list[RadarSnapshot]) -> list[dict]:
-    summaries = [
-        {
-            "trade_date": row.trade_date.isoformat(),
-            "algorithm_version": row.algorithm_version,
-            "score": row.score,
-            "status": row.status,
-            "status_label": row.status_label,
-            "freshness": row.freshness,
-            "component_scores": {
-                str(component.get("key")): component.get("score")
-                for component in (row.snapshot.get("components") or [])
-                if isinstance(component, dict) and component.get("key")
-            },
-            "risk_inputs": risk_inputs_from_snapshot(row.snapshot),
-            "calculated_at": row.calculated_at.isoformat(),
-        }
-        for row in _dedupe_rows(rows)
-    ]
-    fresh_indexes = [index for index, item in enumerate(summaries) if item["freshness"] == "fresh"]
-    positions = build_executable_positions([summaries[index] for index in fresh_indexes])
-    positions_by_index = dict(zip(fresh_indexes, positions, strict=False))
-    for index, item in enumerate(summaries):
-        item["executable_position"] = positions_by_index.get(index)
-    return summaries
 
 
 @router.get("/radar")
@@ -61,14 +26,7 @@ def radar(
         select(RadarSnapshot).order_by(RadarSnapshot.trade_date.desc(), RadarSnapshot.calculated_at.desc())
     )
     if row is not None:
-        history_rows = list(
-            session.scalars(
-                select(RadarSnapshot)
-                .where(RadarSnapshot.algorithm_version == row.algorithm_version)
-                .order_by(RadarSnapshot.trade_date, RadarSnapshot.calculated_at)
-            ).all()
-        )
-        history = _history_payload(history_rows)
+        history = version_history(session, row.algorithm_version)
         snapshot = deepcopy(row.snapshot)
         regime = dict(snapshot.get("regime") or {})
         health = DataHealthService(session, settings).cached_snapshot()
@@ -113,17 +71,8 @@ def radar_history(
     target_version = algorithm_version or (latest.algorithm_version if latest else None)
     if target_version is None:
         return {"items": [], "count": 0, "source": "v2_cache", "algorithm_version": None}
-    rows = list(
-        reversed(
-            session.scalars(
-                select(RadarSnapshot)
-                .where(RadarSnapshot.algorithm_version == target_version)
-                .order_by(RadarSnapshot.trade_date.desc(), RadarSnapshot.calculated_at.desc())
-                .limit(safe_limit)
-            ).all()
-        )
-    )
-    items = _history_payload(rows)
+    # Positions depend on the whole path, so they are computed over all of it before paging.
+    items = version_history(session, target_version)[-safe_limit:]
     return {
         "items": items,
         "count": len(items),
