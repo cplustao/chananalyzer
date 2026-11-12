@@ -39,6 +39,7 @@ MIN_OUTAGES_BEFORE_TIME_LIMIT = 3
 # only this many recent days are fetched again (for late holiday announcements).
 # Fetching all history every day spent Tushare's trade_cal quota of 5 calls a day.
 CALENDAR_REFETCH_DAYS = 30
+CALENDAR_LOOKAHEAD_DAYS = 30
 
 
 def _contiguous_from(saved: list[CalendarSession], start: date) -> list[CalendarSession]:
@@ -247,10 +248,12 @@ class IngestionService:
         cancelled: CancelCallback | None = None,
     ) -> dict[str, Any]:
         end = end_date or self._settled_end_date()
+        # Look ahead so the calendar still covers today on the morning after a refresh;
+        # the gate treats a calendar that ends before today as stale.
         calendar_end = (
             end
             if end_date is not None
-            else datetime.now(ZoneInfo("Asia/Shanghai")).date()
+            else datetime.now(ZoneInfo("Asia/Shanghai")).date() + timedelta(days=CALENDAR_LOOKAHEAD_DAYS)
         )
         automatic = auto_backfill and timeframe == "DAY" and start_date is None and end_date is None
         start = start_date or end - timedelta(days=max(1, lookback_days))
