@@ -11,11 +11,8 @@ from sqlalchemy.orm import Session
 
 from backend.app.core.config import Settings
 from backend.app.db.models import AutomationSchedule, Job, RadarSnapshot, Watchlist, WatchlistItem
-from backend.app.domain.market_positions import (
-    build_executable_positions,
-    risk_inputs_from_snapshot,
-)
 from backend.app.services.data_health import DataHealthService
+from backend.app.services.radar_positions import version_history
 from backend.app.services.scan_changes import SCAN_KINDS, ScanChangeService
 from backend.app.services.schedules import DAILY_PREPARE_SCHEDULE_KEY, TIMEZONE, schedule_view
 from backend.app.services.today_candidates import TodayCandidateService
@@ -150,17 +147,7 @@ class DecisionService:
             .where(RadarSnapshot.algorithm_version == row.algorithm_version)
             .order_by(RadarSnapshot.trade_date)
         ).all()
-        positions = build_executable_positions(
-            [
-                {
-                    "trade_date": item.trade_date.isoformat(),
-                    "score": item.score,
-                    "status": item.status,
-                    "risk_inputs": risk_inputs_from_snapshot(item.snapshot),
-                }
-                for item in history
-            ]
-        )
+        positions = [item["executable_position"] for item in version_history(self.session, row.algorithm_version)]
         snapshot = deepcopy(row.snapshot)
         previous = history[-2] if len(history) > 1 else None
         return {
@@ -177,7 +164,7 @@ class DecisionService:
             "score": row.score,
             "status": row.status,
             "status_label": row.status_label,
-            "executable_position": positions[-1] if positions else None,
+            "executable_position": positions[-1] if positions else None,  # None when the latest is partial
             "changes": self._radar_changes(
                 snapshot,
                 deepcopy(previous.snapshot) if previous else None,

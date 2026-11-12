@@ -405,8 +405,11 @@ def test_saved_calendar_is_reused_and_only_recent_days_are_fetched(session, serv
     monkeypatch.setattr(service.provider, "fetch_calendar", recording_calendar)
     result = service.refresh_bars()
 
-    # One request for the last month instead of one per year of history.
-    assert requests == [(today - timedelta(days=ingestion_module.CALENDAR_REFETCH_DAYS), today)]
+    # One request for the last month and the next one, instead of one per year of history.
+    assert requests == [(
+        today - timedelta(days=ingestion_module.CALENDAR_REFETCH_DAYS),
+        today + timedelta(days=ingestion_module.CALENDAR_LOOKAHEAD_DAYS),
+    )]
     assert result["status"] == "completed"
     assert result["history_complete"] is True
 

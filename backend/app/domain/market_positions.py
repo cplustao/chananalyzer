@@ -6,7 +6,9 @@ can only cap that target; it never raises exposure.
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from collections.abc import Sequence
+from datetime import date
 from typing import Any
 
 POSITION_BANDS = (
@@ -16,13 +18,19 @@ POSITION_BANDS = (
     {"status": "warm", "label": "偏强", "min": 0.45, "max": 0.70, "mid": 0.575},
     {"status": "strong", "label": "强势", "min": 0.60, "max": 0.85, "mid": 0.725},
 )
-POSITION_ALGORITHM_VERSION = "2.1-risk-overlay"
+POSITION_ALGORITHM_VERSION = "2.2-session-aware"
 POSITION_THRESHOLDS = (35.0, 45.0, 58.0, 68.0)
 MA_WINDOW = 5
 HYSTERESIS_POINTS = 3.0
 CONFIRM_DAYS = 2
 RISK_RECOVERY_DAYS = 2
 EMERGENCY_SCORE = 20.0
+# Smoothing and confirmations count trading sessions. Snapshots further apart than
+# this are not a series: the MA and pending confirmations start over after the gap.
+MAX_SESSION_GAP = 3
+# Share of stocks above their 60-day average below which the medium trend is weak / down.
+MA60_WEAK = 0.45
+MA60_DOWN = 0.30
 
 
 def _band_for_score(score: float) -> int:
@@ -65,6 +73,8 @@ def risk_inputs_from_snapshot(snapshot: dict[str, Any] | None) -> dict[str, floa
         "amount_ratio": _number(liquidity.get("amount_ratio")),
         "limit_up_count": _number(ecology.get("limit_up_count")),
         "median_return_5d": _number(trend_metrics.get("median_return_5d")),
+        "above_ma60_rate": _number(trend_metrics.get("above_ma60_rate")),
+        "median_return_20d": _number(trend_metrics.get("median_return_20d")),
     }
 
 
@@ -93,6 +103,7 @@ def _risk_overlay(item: dict[str, Any], previous: dict[str, Any] | None) -> dict
     limit_up = _number(inputs.get("limit_up_count"))
     amount_ratio = _number(inputs.get("amount_ratio"))
     median_return_5d = _number(inputs.get("median_return_5d"))
+    above_ma60 = _number(inputs.get("above_ma60_rate"))
 
     cap_band = len(POSITION_BANDS) - 1
     level = "normal"
@@ -120,6 +131,11 @@ def _risk_overlay(item: dict[str, Any], previous: dict[str, Any] | None) -> dict
         cap(1, "high", f"跌停估算 {limit_down:.0f} 家，不少于涨停生态")
     if previous_score is not None and previous_score - score >= 25:
         cap(1 if score < 45 else 2, "high", f"环境评分单日回落 {previous_score - score:.1f} 分")
+    # A strong day inside a falling market is a bounce, not a new regime.
+    if above_ma60 is not None and above_ma60 < MA60_DOWN:
+        cap(1, "high", f"仅 {above_ma60:.1%} 的股票位于 60 日均线上方，中期趋势向下")
+    elif above_ma60 is not None and above_ma60 < MA60_WEAK:
+        cap(2, "caution", f"仅 {above_ma60:.1%} 的股票位于 60 日均线上方，中期趋势偏弱")
     if score >= 68 and above_ma20 is not None and above_ma20 < 0.50:
         cap(3, "caution", f"强势评分下仅 {above_ma20:.1%} 的样本位于 MA20 上方")
     if (
@@ -138,28 +154,65 @@ def _risk_overlay(item: dict[str, Any], previous: dict[str, Any] | None) -> dict
     }
 
 
-def build_executable_positions(history: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+def _session_gaps(observations: Sequence[dict[str, Any]], open_sessions: Sequence[date] | None) -> list[int]:
+    """Open sessions between each observation and the previous one (1 = consecutive sessions)."""
+    if not open_sessions:
+        return [1] * len(observations)
+    sessions = sorted(open_sessions)
+    indexes: list[int | None] = []
+    for item in observations:
+        try:
+            day = date.fromisoformat(str(item.get("trade_date"))[:10])
+        except ValueError:
+            indexes.append(None)
+            continue
+        indexes.append(bisect_left(sessions, day))
+    gaps = [1]
+    for previous, current in zip(indexes, indexes[1:], strict=False):
+        gaps.append(1 if previous is None or current is None else max(1, current - previous))
+    return gaps
+
+
+def build_executable_positions(
+    history: Sequence[dict[str, Any]], open_sessions: Sequence[date] | None = None
+) -> list[dict[str, Any]]:
+    """Turn radar scores into next-session positions.
+
+    ``open_sessions`` (the trading calendar) lets the MA, the confirmations and the
+    risk recovery count real sessions. Without it, observations are taken as
+    consecutive sessions.
+    """
     observations = dedupe_position_history(history)
     if not observations:
         return []
+    gaps = _session_gaps(observations, open_sessions)
     scores = [float(item.get("score") or 0) for item in observations]
-    ma5_values: list[float] = []
+    ma_values: list[float] = []
+    segment_start = 0
     for index in range(len(scores)):
-        values = scores[max(0, index - MA_WINDOW + 1) : index + 1]
-        ma5_values.append(round(sum(values) / len(values), 1))
+        if gaps[index] > MAX_SESSION_GAP:
+            segment_start = index
+        values = scores[max(segment_start, index - MA_WINDOW + 1) : index + 1]
+        ma_values.append(round(sum(values) / len(values), 1))
 
-    base_band = _band_for_score(ma5_values[0])
+    base_band = _band_for_score(ma_values[0])
     pending_direction = 0
     pending_days = 0
     recovery_days = 0
     executed_band: int | None = None
     results: list[dict[str, Any]] = []
-    for index, (item, raw_score, decision_score) in enumerate(
-        zip(observations, scores, ma5_values, strict=False)
-    ):
+    for index, (item, raw_score, decision_score) in enumerate(zip(observations, scores, ma_values, strict=False)):
         previous_base_band = base_band
+        gap = gaps[index]
         base_reason = "初始仓位按当前平滑评分确定" if index == 0 else "平滑评分未形成连续调仓信号"
-        if index > 0:
+        if index > 0 and gap > MAX_SESSION_GAP:
+            # Nothing is known about the missing sessions: start over, never higher than before.
+            pending_direction = 0
+            pending_days = 0
+            recovery_days = 0
+            base_band = min(base_band, _band_for_score(decision_score))
+            base_reason = f"评分中断 {gap - 1} 个交易日，平滑与确认重新开始，基础仓位不高于中断前"
+        elif index > 0:
             direction = 0
             if (
                 base_band < len(POSITION_BANDS) - 1
@@ -168,6 +221,10 @@ def build_executable_positions(history: Sequence[dict[str, Any]]) -> list[dict[s
                 direction = 1
             elif base_band > 0 and decision_score < POSITION_THRESHOLDS[base_band - 1] - HYSTERESIS_POINTS:
                 direction = -1
+            if gap > 1:
+                # A skipped session breaks a run of confirmations.
+                pending_direction = 0
+                pending_days = 0
             if direction == 0:
                 pending_direction = 0
                 pending_days = 0
@@ -185,45 +242,41 @@ def build_executable_positions(history: Sequence[dict[str, Any]]) -> list[dict[s
                 else:
                     base_reason = f"MA5 已出现{'升仓' if direction > 0 else '降仓'}信号，等待第 {CONFIRM_DAYS} 个交易日确认"
 
-        overlay = _risk_overlay(item, observations[index - 1] if index > 0 else None)
-        desired_band = min(base_band, int(overlay["cap_band"]))
+        previous_item = observations[index - 1] if index > 0 and gap <= MAX_SESSION_GAP else None
+        overlay = _risk_overlay(item, previous_item)
+        cap_band = int(overlay["cap_band"])
+        desired_band = min(base_band, cap_band)
+        cap_note = f"；上限：{'；'.join(overlay['reasons'])}" if cap_band < base_band else ""
         previous_executed = executed_band
-        if executed_band is None:
-            executed_band = desired_band
-            final_reason = (
-                base_reason
-                if desired_band == base_band
-                else f"风险覆盖层限制仓位：{'；'.join(overlay['reasons'])}"
-            )
+        if executed_band is None or index > 0 and gap > MAX_SESSION_GAP:
+            executed_band = desired_band if executed_band is None else min(executed_band, desired_band)
+            recovery_days = 0
+            final_reason = base_reason + cap_note
         elif desired_band < executed_band:
             executed_band = desired_band
             recovery_days = 0
             final_reason = (
-                f"风险覆盖层立即降仓：{'；'.join(overlay['reasons'])}"
-                if desired_band < base_band
-                else base_reason
+                f"风险覆盖层立即降仓：{'；'.join(overlay['reasons'])}" if desired_band < base_band else base_reason
             )
         elif desired_band > executed_band:
-            if int(overlay["cap_band"]) < len(POSITION_BANDS) - 1:
+            if gap > 1:
                 recovery_days = 0
-                final_reason = f"风险信号仍在，维持仓位上限：{'；'.join(overlay['reasons'])}"
-            elif base_band > previous_base_band and executed_band == previous_base_band:
+            if base_band > previous_base_band and executed_band == previous_base_band:
                 executed_band += 1
                 recovery_days = 0
-                final_reason = base_reason
+                final_reason = base_reason + cap_note
             else:
                 recovery_days = min(recovery_days + 1, RISK_RECOVERY_DAYS)
                 if recovery_days >= RISK_RECOVERY_DAYS:
+                    # Once confirmed, one band per consecutive session, never above the cap.
                     executed_band += 1
-                    final_reason = "风险解除已确认，按每个交易日一档逐步恢复仓位"
+                    final_reason = "风险缓和已确认，按每个交易日一档逐步恢复仓位" + cap_note
                 else:
-                    final_reason = "风险信号已解除，等待第 2 个交易日确认后恢复仓位"
+                    final_reason = f"风险缓和，等待第 {RISK_RECOVERY_DAYS} 个交易日确认后恢复一档仓位" + cap_note
         else:
             recovery_days = 0
             final_reason = (
-                f"风险覆盖层限制仓位：{'；'.join(overlay['reasons'])}"
-                if desired_band < base_band
-                else base_reason
+                f"风险覆盖层限制仓位：{'；'.join(overlay['reasons'])}" if desired_band < base_band else base_reason
             )
 
         action = (
@@ -239,6 +292,7 @@ def build_executable_positions(history: Sequence[dict[str, Any]]) -> list[dict[s
             {
                 "position_algorithm_version": POSITION_ALGORITHM_VERSION,
                 "decision_score": decision_score,
+                "session_gap": gap,
                 "band": executed_band,
                 "status": band["status"],
                 "status_label": band["label"],
@@ -252,7 +306,7 @@ def build_executable_positions(history: Sequence[dict[str, Any]]) -> list[dict[s
                 "base_max": base["max"],
                 "base_mid": base["mid"],
                 "base_reason": base_reason,
-                "risk_cap_band": overlay["cap_band"],
+                "risk_cap_band": cap_band,
                 "risk_level": overlay["level"],
                 "risk_triggered": overlay["triggered"],
                 "risk_reasons": overlay["reasons"],

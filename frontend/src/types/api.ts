@@ -73,6 +73,8 @@ export type ChanStructureResponse = {
 export type ExecutablePosition = {
   position_algorithm_version?: string
   decision_score: number
+  /** Open sessions since the previous snapshot; more than 3 restarts the smoothing. */
+  session_gap?: number
   band: number
   status: string
   status_label: string
@@ -105,6 +107,8 @@ export type RadarHistoryItem = {
   executable_position?: ExecutablePosition | null
   component_scores?: Record<string, number | null>
   calculated_at: string
+  /** Computed after the fact from saved bars, not available on its trade date. */
+  backfilled?: boolean
 }
 
 export type RadarComponent = {

@@ -61,7 +61,7 @@ export function RadarPage() {
   const radar = useQuery({ queryKey: ["radar"], queryFn: () => api<RadarSnapshot>("/market/radar") })
   const history = useQuery({
     queryKey: ["radar-history"],
-    queryFn: () => api<{ items: RadarHistoryItem[] }>("/market/radar/history?limit=90"),
+    queryFn: () => api<{ items: RadarHistoryItem[] }>("/market/radar/history?limit=250"),
   })
   const decision = useQuery({
     queryKey: ["decision-today"],
@@ -236,7 +236,7 @@ export function RadarPage() {
       </section>
 
       <section className="panel">
-        <div className="panel-title"><span>历史评分与可执行仓位</span><small>最近 90 个快照 · 仓位为平滑、确认和滞回后的次日执行值</small></div>
+        <div className="panel-title"><span>历史评分与可执行仓位</span><small>最近 250 个交易日 · 上：评分（不是仓位）；下：次日可执行仓位区间 · 缺数据处断开</small></div>
         {history.data?.items?.length ? <RadarHistoryChart items={history.data.items} /> : <div className="empty-chart">暂无历史序列</div>}
       </section>
 
